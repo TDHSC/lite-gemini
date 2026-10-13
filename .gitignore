@@ -11,9 +11,9 @@ DerivedData/
 *~
 
 # Swift Package Manager
+# Package.resolved is committed so local and CI builds use the same Sparkle version.
 .build/
 Packages/
-Package.resolved
 
 # Misc
 *.pbxuser
