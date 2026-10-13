@@ -34,9 +34,6 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     /// Subscriptions for observing settings changes
     private var cancellables = Set<AnyCancellable>()
 
-    /// Shared process pool to ensure all WebView instances share the same session, avoiding cookie isolation
-    private static let sharedProcessPool = WKProcessPool()
-
     /// IME fix script — injected at document start to register before any page scripts.
     /// Tracks real composing state and blocks buggy Enter events from reaching the page.
     /// Console log bridge — forwards JS console.log to native Xcode console
@@ -205,7 +202,6 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         let configuration = WKWebViewConfiguration()
         // Use default persistent data store to preserve cookies / LocalStorage across app restarts
         configuration.websiteDataStore = WKWebsiteDataStore.default()
-        configuration.processPool = Self.sharedProcessPool
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
 
         // Inject console log bridge first so it captures all subsequent console.log calls
