@@ -11,13 +11,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		272B660F2F3AFDA200EBF5DA /* Gemini Next Desktop.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Gemini Next Desktop.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		272B660F2F3AFDA200EBF5DA /* Lite Gemini.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Lite Gemini.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		272B66112F3AFDA200EBF5DA /* GeminiNext */ = {
+		272B66112F3AFDA200EBF5DA /* LiteGemini */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = GeminiNext;
+			path = LiteGemini;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -37,7 +37,7 @@
 		272B66062F3AFDA200EBF5DA = {
 			isa = PBXGroup;
 			children = (
-				272B66112F3AFDA200EBF5DA /* GeminiNext */,
+				272B66112F3AFDA200EBF5DA /* LiteGemini */,
 				272B66102F3AFDA200EBF5DA /* Products */,
 			);
 			sourceTree = "<group>";
@@ -45,7 +45,7 @@
 		272B66102F3AFDA200EBF5DA /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				272B660F2F3AFDA200EBF5DA /* Gemini Next Desktop.app */,
+				272B660F2F3AFDA200EBF5DA /* Lite Gemini.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -53,9 +53,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		272B660E2F3AFDA200EBF5DA /* GeminiNext */ = {
+		272B660E2F3AFDA200EBF5DA /* LiteGemini */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 272B661A2F3AFDA400EBF5DA /* Build configuration list for PBXNativeTarget "GeminiNext" */;
+			buildConfigurationList = 272B661A2F3AFDA400EBF5DA /* Build configuration list for PBXNativeTarget "LiteGemini" */;
 			buildPhases = (
 				272B660B2F3AFDA200EBF5DA /* Sources */,
 				272B660C2F3AFDA200EBF5DA /* Frameworks */,
@@ -66,14 +66,14 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				272B66112F3AFDA200EBF5DA /* GeminiNext */,
+				272B66112F3AFDA200EBF5DA /* LiteGemini */,
 			);
-			name = "Gemini Next Desktop";
+			name = "Lite Gemini";
 			packageProductDependencies = (
 				A1B2C3D42F3B000000000002 /* Sparkle */,
 			);
-			productName = "Gemini Next Desktop";
-			productReference = 272B660F2F3AFDA200EBF5DA /* Gemini Next Desktop.app */;
+			productName = "Lite Gemini";
+			productReference = 272B660F2F3AFDA200EBF5DA /* Lite Gemini.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -91,7 +91,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 272B660A2F3AFDA200EBF5DA /* Build configuration list for PBXProject "GeminiNext" */;
+			buildConfigurationList = 272B660A2F3AFDA200EBF5DA /* Build configuration list for PBXProject "LiteGemini" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -109,7 +109,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				272B660E2F3AFDA200EBF5DA /* GeminiNext */,
+				272B660E2F3AFDA200EBF5DA /* LiteGemini */,
 			);
 		};
 /* End PBXProject section */
@@ -258,7 +258,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = GeminiNext/GeminiNext.entitlements;
+				CODE_SIGN_ENTITLEMENTS = LiteGemini/LiteGemini.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -279,16 +279,16 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = GeminiNext/Info.plist;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jray. All rights reserved.";
+				INFOPLIST_FILE = LiteGemini/Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jray, TDHSC. MIT License.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.3.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jraaay.GeminiNext;
-				PRODUCT_NAME = "Gemini Next Desktop";
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.tdhsc.LiteGemini;
+				PRODUCT_NAME = "Lite Gemini";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -304,7 +304,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = GeminiNext/GeminiNext.entitlements;
+				CODE_SIGN_ENTITLEMENTS = LiteGemini/LiteGemini.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -325,16 +325,16 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = GeminiNext/Info.plist;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jray. All rights reserved.";
+				INFOPLIST_FILE = LiteGemini/Info.plist;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Jray, TDHSC. MIT License.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.3.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.jraaay.GeminiNext;
-				PRODUCT_NAME = "Gemini Next Desktop";
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.tdhsc.LiteGemini;
+				PRODUCT_NAME = "Lite Gemini";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -348,7 +348,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		272B660A2F3AFDA200EBF5DA /* Build configuration list for PBXProject "GeminiNext" */ = {
+		272B660A2F3AFDA200EBF5DA /* Build configuration list for PBXProject "LiteGemini" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				272B66182F3AFDA400EBF5DA /* Debug */,
@@ -357,7 +357,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		272B661A2F3AFDA400EBF5DA /* Build configuration list for PBXNativeTarget "GeminiNext" */ = {
+		272B661A2F3AFDA400EBF5DA /* Build configuration list for PBXNativeTarget "LiteGemini" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				272B661B2F3AFDA400EBF5DA /* Debug */,

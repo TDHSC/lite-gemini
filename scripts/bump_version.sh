@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# bump_version.sh - Gemini Next Desktop Version Auto-Management Script
+# bump_version.sh - Lite Gemini Version Auto-Management Script
 #
 # Usage:
 #   ./scripts/bump_version.sh <version|patch|minor|major>
@@ -23,7 +23,7 @@ NC='\033[0m' # No color
 # Locate project root (parent of the script directory)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PBXPROJ="$PROJECT_ROOT/GeminiNext.xcodeproj/project.pbxproj"
+PBXPROJ="$PROJECT_ROOT/LiteGemini.xcodeproj/project.pbxproj"
 
 # Check arguments
 if [ $# -ne 1 ]; then
@@ -120,7 +120,7 @@ echo -e "${GREEN}   CURRENT_PROJECT_VERSION: ${CURRENT_BUILD} → ${NEW_BUILD}${
 echo ""
 echo -e "${YELLOW}Run the following commands to complete the release:${NC}"
 echo ""
-echo "  git add GeminiNext.xcodeproj/project.pbxproj"
+echo "  git add LiteGemini.xcodeproj/project.pbxproj"
 echo "  git commit -m \"release: v${NEW_VERSION}\""
 echo "  git tag v${NEW_VERSION}"
 echo "  git push && git push --tags"

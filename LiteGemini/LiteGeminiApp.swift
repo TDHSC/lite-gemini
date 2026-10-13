@@ -3,7 +3,7 @@ import WebKit
 import Sparkle
 
 @main
-struct GeminiNextApp: App {
+struct LiteGeminiApp: App {
     // Use StateObject to persist the lifecycle even when the window is closed
     @StateObject private var webViewModel = WebViewModel()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate

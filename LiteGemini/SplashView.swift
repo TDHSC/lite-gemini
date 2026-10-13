@@ -1,6 +1,6 @@
 //
 //  SplashView.swift
-//  GeminiNext
+//  LiteGemini
 //
 //  Created by Jray on 2026/2/14.
 //
@@ -58,7 +58,7 @@ struct SplashView: View {
                 appIcon
 
                 // App title with gradient
-                Text("Gemini Next Desktop")
+                Text("Lite Gemini")
                     .font(.system(size: 24, weight: .semibold, design: .rounded))
                     .foregroundStyle(brandGradient)
 

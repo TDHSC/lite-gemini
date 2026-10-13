@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  GeminiNext
+//  LiteGemini
 //
 //  Created by Jray on 2026/2/10.
 //
