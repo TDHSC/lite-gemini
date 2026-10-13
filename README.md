@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="resources/logo.svg" alt="Gemini Next Desktop Logo" width="120" height="120">
+  <img src="resources/logo.png" alt="Lite Gemini Logo" width="120" height="120">
 
   <h1>Gemini Next Desktop</h1>
 

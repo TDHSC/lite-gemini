@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="resources/logo.svg" alt="Gemini Next Desktop Logo" width="120" height="120">
+  <img src="resources/logo.png" alt="Lite Gemini Logo" width="120" height="120">
   <h1>Gemini Next Desktop</h1>
 
   <h3>更轻快、更纯净、更懂 macOS 的 Gemini 非官方桌面客户端</h3>
