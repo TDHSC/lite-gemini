@@ -1,15 +1,15 @@
 <div align="center">
   <img src="resources/logo.png" alt="Lite Gemini Logo" width="120" height="120">
 
-  <h1>Gemini Next Desktop</h1>
+  <h1>Lite Gemini</h1>
 
   <h3>A lighter, cleaner, and more macOS-native unofficial Gemini desktop client</h3>
   
   <p>
     <img src="https://img.shields.io/badge/Platform-macOS%2014.0%2B-blue?logo=apple&style=flat-square" alt="Platform">
     <img src="https://img.shields.io/badge/Language-Swift-orange?logo=swift&style=flat-square" alt="Language"> <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License">
-    <a href="https://github.com/Jraaay/Gemini-Next-Desktop/releases">
-      <img src="https://img.shields.io/github/v/release/Jraaay/Gemini-Next-Desktop?style=flat-square" alt="Release">
+    <a href="https://github.com/TDHSC/lite-gemini/releases">
+      <img src="https://img.shields.io/github/v/release/TDHSC/lite-gemini?style=flat-square" alt="Release">
     </a>
   </p>
 
@@ -25,9 +25,9 @@
   <img src="resources/Main.png" width="600" alt="Main Interface">
 </div>
 
-## 💡 Why Gemini Next Desktop?
+## 💡 Why Lite Gemini?
 
-Unlike bloated Electron-based apps, Gemini Next Desktop is built entirely with native SwiftUI. No excessive memory usage, no sluggish startup — just a silky-smooth experience that feels like a built-in macOS app.
+Unlike bloated Electron-based apps, Lite Gemini is built entirely with native SwiftUI. No excessive memory usage, no sluggish startup — just a silky-smooth experience that feels like a built-in macOS app.
 
 ### 🚀 Key Advantages
 
@@ -67,18 +67,24 @@ Unlike bloated Electron-based apps, Gemini Next Desktop is built entirely with n
 
 ### Option 1: Direct Download (Recommended)
 
-Head to [Releases](https://github.com/Jraaay/Gemini-Next-Desktop/releases) and download the Universal Binary installer:
+Head to [Releases](https://github.com/TDHSC/lite-gemini/releases) and download the Universal Binary installer:
 
-* `GeminiNextDesktop-vX.X.X.dmg` — supports both Apple Silicon and Intel Macs
+* `LiteGemini-vX.X.X.dmg` — supports both Apple Silicon and Intel Macs
+
+> [!NOTE]
+> The app is not notarized by Apple, so macOS blocks it on first launch. Open **System Settings → Privacy & Security** and click **Open Anyway**, or run:
+> ```bash
+> xattr -dr com.apple.quarantine "/Applications/Lite Gemini.app"
+> ```
 
 ### Option 2: Build from Source
 
-To compile from source, make sure your environment meets: **macOS 14.0+** with **Xcode 16.0+** installed.
+To compile from source, make sure your environment meets: **macOS 14.0+** with **Xcode 26.1+** installed (required to compile the Icon Composer app icon).
 
 ```bash
-git clone https://github.com/Jraaay/Gemini-Next-Desktop.git
-cd GeminiNext
-open GeminiNext.xcodeproj
+git clone https://github.com/TDHSC/lite-gemini.git
+cd lite-gemini
+open LiteGemini.xcodeproj
 ```
 
 Select your target device in Xcode, then press `Cmd + R` to build and run.
@@ -117,6 +123,14 @@ Select your target device in Xcode, then press `Cmd + R` to build and run.
 * **Carbon Events** — Low-level global hotkey registration
 * **Sparkle** — Mature open-source framework for macOS app updates
 * **String Catalog** — Apple's recommended localization solution
+
+## 🙏 Acknowledgements
+
+Lite Gemini is based on [Gemini Next Desktop](https://github.com/Jraaay/Gemini-Next-Desktop) by [Jray](https://github.com/Jraaay), released under the MIT License.
+
+## ⚠️ Disclaimer
+
+Lite Gemini is an unofficial client and is not affiliated with, endorsed by, or sponsored by Google. Gemini and the Gemini logo are trademarks of Google LLC.
 
 ## 📄 License
 

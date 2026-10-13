@@ -1,14 +1,14 @@
 <div align="center">
   <img src="resources/logo.png" alt="Lite Gemini Logo" width="120" height="120">
-  <h1>Gemini Next Desktop</h1>
+  <h1>Lite Gemini</h1>
 
   <h3>更轻快、更纯净、更懂 macOS 的 Gemini 非官方桌面客户端</h3>
   
   <p>
     <img src="https://img.shields.io/badge/Platform-macOS%2014.0%2B-blue?logo=apple&style=flat-square" alt="Platform">
     <img src="https://img.shields.io/badge/Language-Swift-orange?logo=swift&style=flat-square" alt="Language"> <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License">
-    <a href="https://github.com/Jraaay/Gemini-Next-Desktop/releases">
-      <img src="https://img.shields.io/github/v/release/Jraaay/Gemini-Next-Desktop?style=flat-square" alt="Release">
+    <a href="https://github.com/TDHSC/lite-gemini/releases">
+      <img src="https://img.shields.io/github/v/release/TDHSC/lite-gemini?style=flat-square" alt="Release">
     </a>
   </p>
 
@@ -24,9 +24,9 @@
   <img src="resources/Main.png" width="600" alt="主界面">
 </div>
 
-## 💡 为什么选择 Gemini Next Desktop？
+## 💡 为什么选择 Lite Gemini？
 
-不同于基于 Electron 的庞大应用，Gemini Next Desktop 坚持使用原生 SwiftUI 构建。我们拒绝内存占用过高和启动缓慢，致力于提供像系统内置应用一样的丝滑体验。
+不同于基于 Electron 的庞大应用，Lite Gemini 坚持使用原生 SwiftUI 构建。我们拒绝内存占用过高和启动缓慢，致力于提供像系统内置应用一样的丝滑体验。
 
 ### 🚀 核心优势
 
@@ -66,18 +66,24 @@
 
 ### 方式一：直接下载 (推荐)
 
-前往 [Releases](https://github.com/Jraaay/Gemini-Next-Desktop/releases) 下载通用安装包：
+前往 [Releases](https://github.com/TDHSC/lite-gemini/releases) 下载通用安装包：
 
-* `GeminiNextDesktop-vX.X.X.dmg` — 同时支持 Apple Silicon 和 Intel Mac
+* `LiteGemini-vX.X.X.dmg` — 同时支持 Apple Silicon 和 Intel Mac
+
+> [!NOTE]
+> 应用未经过 Apple 公证，首次打开会被 macOS 拦截。请前往 **系统设置 → 隐私与安全性**，点击 **仍要打开**，或在终端执行：
+> ```bash
+> xattr -dr com.apple.quarantine "/Applications/Lite Gemini.app"
+> ```
 
 ### 方式二：从源码构建
 
-若要自行编译，请确保开发环境满足：**macOS 14.0+** 且安装了 **Xcode 16.0+**。
+若要自行编译，请确保开发环境满足：**macOS 14.0+** 且安装了 **Xcode 26.1+**（编译 Icon Composer 格式的应用图标需要）。
 
 ```bash
-git clone https://github.com/Jraaay/Gemini-Next-Desktop.git
-cd GeminiNext
-open GeminiNext.xcodeproj
+git clone https://github.com/TDHSC/lite-gemini.git
+cd lite-gemini
+open LiteGemini.xcodeproj
 ```
 
 在 Xcode 中选择目标设备，按下 `Cmd + R` 即可运行。
@@ -116,6 +122,14 @@ open GeminiNext.xcodeproj
 * **Carbon Events** — 底层全局热键注册方案
 * **Sparkle** — 成熟的 macOS 应用自动更新开源框架
 * **String Catalog** — 苹果官方推荐的多语言管理方案
+
+## 🙏 致谢
+
+Lite Gemini 基于 [Jray](https://github.com/Jraaay) 的 [Gemini Next Desktop](https://github.com/Jraaay/Gemini-Next-Desktop)（MIT License）开发。
+
+## ⚠️ 免责声明
+
+Lite Gemini 是非官方客户端，与 Google 无任何关联，也未获得其认可或赞助。Gemini 及 Gemini 标志是 Google LLC 的商标。
 
 ## 📄 开源协议
 
