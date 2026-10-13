@@ -233,6 +233,15 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
+
+        // Apply User-Agent edits from Settings; they take effect on the next load (Cmd+R)
+        settings.$userAgent
+            .dropFirst()
+            .sink { [weak self] userAgent in
+                self?.webView.customUserAgent = userAgent
+            }
+            .store(in: &cancellables)
+
         webView.load(URLRequest(url: Constants.geminiURL))
 
         // Observe app activation / deactivation events

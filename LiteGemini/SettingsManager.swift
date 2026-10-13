@@ -189,7 +189,11 @@ class SettingsManager: ObservableObject {
 
     private enum Defaults {
         static let backgroundTimeout = BackgroundTimeoutPreset.tenMinutes
-        static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15"
+        static let userAgent = SettingsManager.safariUserAgent()
+        /// Former hard-coded defaults; a stored value equal to one of these was never customized
+        static let legacyUserAgents: Set<String> = [
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15"
+        ]
         static let launchAtLogin = false
         static let alwaysOnTop = false
         static let customHotKey: CustomHotKey? = CustomHotKey.defaultHotKey
@@ -218,9 +222,16 @@ class SettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(backgroundTimeout.rawValue, forKey: Keys.backgroundTimeout) }
     }
 
-    /// Custom User-Agent string
+    /// User-Agent string; only persisted when it differs from the default,
+    /// so the default keeps tracking the installed Safari version
     @Published var userAgent: String {
-        didSet { UserDefaults.standard.set(userAgent, forKey: Keys.userAgent) }
+        didSet {
+            if userAgent == Defaults.userAgent {
+                UserDefaults.standard.removeObject(forKey: Keys.userAgent)
+            } else {
+                UserDefaults.standard.set(userAgent, forKey: Keys.userAgent)
+            }
+        }
     }
 
     /// Launch at login
@@ -304,7 +315,13 @@ class SettingsManager: ObservableObject {
             self.backgroundTimeout = Defaults.backgroundTimeout
         }
 
-        self.userAgent = defaults.string(forKey: Keys.userAgent) ?? Defaults.userAgent
+        if let storedUserAgent = defaults.string(forKey: Keys.userAgent),
+           !Defaults.legacyUserAgents.contains(storedUserAgent) {
+            self.userAgent = storedUserAgent
+        } else {
+            defaults.removeObject(forKey: Keys.userAgent)
+            self.userAgent = Defaults.userAgent
+        }
         self.launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
         self.alwaysOnTop = defaults.bool(forKey: Keys.alwaysOnTop)
 
@@ -359,6 +376,24 @@ class SettingsManager: ObservableObject {
     }
 
     // MARK: - Private Methods
+
+    /// Build a Safari User-Agent for the installed Safari version.
+    /// WebKit freezes every token except "Version/", which carries Safari's major.minor version.
+    private static func safariUserAgent() -> String {
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(safariVersion()) Safari/605.1.15"
+    }
+
+    /// Major.minor version of the installed Safari, which ships the system WebKit used by WKWebView
+    private static func safariVersion() -> String {
+        let shortVersion = Bundle(path: "/Applications/Safari.app")?
+            .infoDictionary?["CFBundleShortVersionString"] as? String
+        let components = shortVersion?.split(separator: ".").prefix(2) ?? []
+        guard components.count == 2 else {
+            // Safari is always installed on macOS; fall back to a current release just in case
+            return "26.0"
+        }
+        return components.joined(separator: ".")
+    }
 
     /// Update launch-at-login state
     private func updateLaunchAtLogin() {
