@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-26
+    # Xcode-versioned image (public preview); runs macOS 27 with Xcode 27.x only.
+    runs-on: xcode-27
 
     steps:
       - name: Checkout
@@ -29,7 +30,11 @@ jobs:
           fi
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_26.6.app || sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+        # Pin the release Xcode used for local builds; fall back to the image's
+        # default (always a non-beta) rather than the newest, which may be a beta.
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.0.app || sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
 
       - name: Resolve Swift Package Dependencies
         run: |
