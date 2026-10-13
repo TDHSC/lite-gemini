@@ -10,11 +10,11 @@ permissions:
 
 jobs:
   update-appcast:
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -57,8 +57,10 @@ jobs:
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
-          # Download Sparkle command-line tools
-          SPARKLE_VERSION="2.8.1"
+          # Download Sparkle command-line tools matching the version the app links against
+          SPARKLE_VERSION=$(jq -r '.pins[] | select(.identity == "sparkle") | .state.version' \
+            LiteGemini.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved)
+          echo "Sparkle version: $SPARKLE_VERSION"
           curl -sL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" -o sparkle.tar.xz
           mkdir -p sparkle_tools
           tar -xf sparkle.tar.xz -C sparkle_tools

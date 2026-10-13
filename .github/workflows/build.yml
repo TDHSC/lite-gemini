@@ -10,11 +10,11 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Verify version consistency
         run: |
@@ -29,7 +29,7 @@ jobs:
           fi
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app || sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+        run: sudo xcode-select -s /Applications/Xcode_26.6.app || sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
 
       - name: Resolve Swift Package Dependencies
         run: |
@@ -74,7 +74,7 @@ jobs:
           echo "DMG_NAME=$DMG_NAME" >> $GITHUB_ENV
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: LiteGemini-universal
           path: ${{ env.DMG_NAME }}
@@ -85,13 +85,13 @@ jobs:
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*.dmg
           generate_release_notes: true
