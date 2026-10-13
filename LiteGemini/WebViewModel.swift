@@ -183,11 +183,11 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
     let webView: WKWebView
 
-    /// Background timeout timer; navigates back to homepage on timeout
-    private var backgroundTimer: Timer?
+    /// Background timeout task; navigates back to homepage on timeout
+    private var backgroundTimeoutTask: Task<Void, Never>?
 
-    /// Timer that polls for input field readiness via JavaScript
-    private var inputReadyTimer: Timer?
+    /// Task that polls for input field readiness via JavaScript
+    private var inputReadyTask: Task<Void, Never>?
 
     /// Check if currently on the Gemini homepage
     private var isOnHomePage: Bool {
@@ -258,9 +258,9 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         )
     }
 
-    deinit {
-        backgroundTimer?.invalidate()
-        inputReadyTimer?.invalidate()
+    isolated deinit {
+        backgroundTimeoutTask?.cancel()
+        inputReadyTask?.cancel()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "imeEnterFix")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "consoleLog")
         NotificationCenter.default.removeObserver(self)
@@ -287,8 +287,8 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
     /// When app becomes active, cancel the timer and focus the input field
     @objc private func appDidBecomeActive() {
-        backgroundTimer?.invalidate()
-        backgroundTimer = nil
+        backgroundTimeoutTask?.cancel()
+        backgroundTimeoutTask = nil
 
         // Delay briefly to ensure the window and WebView are fully ready before focusing
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
@@ -301,19 +301,17 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         webView.load(URLRequest(url: Constants.geminiURL))
     }
 
-    /// Start the timeout timer when the app enters background (not started when set to "never")
+    /// Start the timeout when the app enters background (not started when set to "never")
     @objc private func appDidResignActive() {
-        backgroundTimer?.invalidate()
-        backgroundTimer = nil
+        backgroundTimeoutTask?.cancel()
+        backgroundTimeoutTask = nil
 
-        // Do not start the timer when "never" is selected
+        // Do not start the timeout when "never" is selected
         guard let interval = settings.backgroundTimeout.seconds else { return }
 
-        backgroundTimer = Timer.scheduledTimer(
-            withTimeInterval: interval,
-            repeats: false
-        ) { [weak self] _ in
-            guard let self = self, !self.isOnHomePage else { return }
+        backgroundTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(interval))
+            guard !Task.isCancelled, let self, !self.isOnHomePage else { return }
             self.webView.load(URLRequest(url: Constants.geminiURL))
         }
     }
@@ -372,42 +370,36 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     private func startInputReadyPolling() {
         stopInputReadyPolling()
         isPageReady = false
-        let startTime = Date()
 
-        inputReadyTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] timer in
-            guard let self = self else { timer.invalidate(); return }
+        let js = """
+        (function() {
+            var el = document.querySelector('[contenteditable="true"]');
+            if (!el) el = document.querySelector('textarea');
+            return el !== null;
+        })();
+        """
 
+        inputReadyTask = Task { [weak self] in
             // Timeout after 30 seconds, fall back to didFinish
-            if Date().timeIntervalSince(startTime) > 30 {
-                timer.invalidate()
-                self.inputReadyTimer = nil
-                return
-            }
+            let deadline = ContinuousClock.now + .seconds(30)
+            while ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(200))
+                guard !Task.isCancelled, let self else { return }
 
-            let js = """
-            (function() {
-                var el = document.querySelector('[contenteditable="true"]');
-                if (!el) el = document.querySelector('textarea');
-                return el !== null;
-            })();
-            """
-            self.webView.evaluateJavaScript(js) { result, _ in
-                if let ready = result as? Bool, ready {
-                    DispatchQueue.main.async {
-                        if !self.isPageReady {
-                            self.isPageReady = true
-                        }
-                        self.stopInputReadyPolling()
+                if let ready = try? await self.webView.evaluateJavaScript(js) as? Bool, ready {
+                    if !self.isPageReady {
+                        self.isPageReady = true
                     }
+                    return
                 }
             }
         }
     }
 
-    /// Stop the input ready polling timer
+    /// Stop the input ready polling task
     private func stopInputReadyPolling() {
-        inputReadyTimer?.invalidate()
-        inputReadyTimer = nil
+        inputReadyTask?.cancel()
+        inputReadyTask = nil
     }
 
     // MARK: - WKUIDelegate

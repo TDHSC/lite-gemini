@@ -8,8 +8,9 @@ private enum HotKeyIDs {
     static let signature: OSType = OSType(0x53574654)
 }
 
-/// Global hotkey callback function conforming to @convention(c)
-private func hotKeyHandler(nextHandler: EventHandlerCallRef?, event: EventRef?, userData: UnsafeMutableRawPointer?) -> OSStatus {
+/// Global hotkey callback function conforming to @convention(c).
+/// Nonisolated so it can be passed as a C function pointer; the actual work hops to the main actor.
+nonisolated private func hotKeyHandler(nextHandler: EventHandlerCallRef?, event: EventRef?, userData: UnsafeMutableRawPointer?) -> OSStatus {
     guard let event = event else { return OSStatus(eventNotHandledErr) }
 
     var hotKeyID = EventHotKeyID()
@@ -215,7 +216,7 @@ class HotKeyManager {
 
     /// Show window with fade-in animation
     /// - Parameter completion: optional callback after activation completes
-    private func showWithAnimation(completion: (() -> Void)? = nil) {
+    private func showWithAnimation(completion: (@MainActor () -> Void)? = nil) {
         let useAnimation = SettingsManager.shared.windowAnimation
 
         NSApp.activate(ignoringOtherApps: true)
@@ -235,8 +236,11 @@ class HotKeyManager {
                     context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                     window.animator().alphaValue = 1.0
                 }, completionHandler: { [weak self] in
-                    self?.isAnimating = false
-                    completion?()
+                    // AppKit calls the completion handler on the main thread
+                    MainActor.assumeIsolated {
+                        self?.isAnimating = false
+                        completion?()
+                    }
                 })
             } else {
                 window.alphaValue = 1.0
@@ -258,10 +262,13 @@ class HotKeyManager {
                     context.timingFunction = CAMediaTimingFunction(name: .easeIn)
                     window.animator().alphaValue = 0
                 }, completionHandler: { [weak self] in
-                    NSApp.hide(nil)
-                    // Restore alphaValue for the next show
-                    window.alphaValue = 1.0
-                    self?.isAnimating = false
+                    // AppKit calls the completion handler on the main thread
+                    MainActor.assumeIsolated {
+                        NSApp.hide(nil)
+                        // Restore alphaValue for the next show
+                        window.alphaValue = 1.0
+                        self?.isAnimating = false
+                    }
                 })
             }
         } else {

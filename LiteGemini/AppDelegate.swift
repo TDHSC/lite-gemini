@@ -40,9 +40,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 context.timingFunction = CAMediaTimingFunction(name: .easeIn)
                 sender.animator().alphaValue = 0
             }, completionHandler: {
-                NSApp.hide(nil)
-                // Restore alphaValue for the next show
-                sender.alphaValue = 1.0
+                // AppKit calls the completion handler on the main thread
+                MainActor.assumeIsolated {
+                    NSApp.hide(nil)
+                    // Restore alphaValue for the next show
+                    sender.alphaValue = 1.0
+                }
             })
         } else {
             NSApp.hide(nil)
