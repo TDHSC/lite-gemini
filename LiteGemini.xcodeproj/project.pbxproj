@@ -14,9 +14,22 @@
 		272B660F2F3AFDA200EBF5DA /* Lite Gemini.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Lite Gemini.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A1B2C3D42F3B000000000004 /* Exceptions for "LiteGemini" folder in "Lite Gemini" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 272B660E2F3AFDA200EBF5DA /* Lite Gemini */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		272B66112F3AFDA200EBF5DA /* LiteGemini */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A1B2C3D42F3B000000000004 /* Exceptions for "LiteGemini" folder in "Lite Gemini" target */,
+			);
 			path = LiteGemini;
 			sourceTree = "<group>";
 		};
