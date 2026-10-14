@@ -19,7 +19,7 @@ struct LiteGeminiApp: App {
                 Button("Close Window") {
                     if let keyWindow = NSApp.keyWindow {
                         if keyWindow.delegate is AppDelegate {
-                            NSApp.hide(nil)
+                            WindowVisibility.shared.hide()
                         } else {
                             keyWindow.close()
                         }

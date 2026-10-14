@@ -45,12 +45,7 @@ class HotKeyManager {
     private var newChatHotKeyRef: EventHotKeyRef?
     /// Event handler only needs to be installed once
     private var handlerInstalled = false
-    /// Prevent repeated triggers during animation
-    private var isAnimating = false
 
-    /// Animation duration (seconds), no more than 200ms
-    private let animationDuration: TimeInterval = 0.15
-    
     private init() {}
     
     /// Register hotkey on initial launch
@@ -152,102 +147,35 @@ class HotKeyManager {
     }
     
     func onHotKeyPressed() {
+        let visibility = WindowVisibility.shared
         // If animation is in progress, ignore this trigger
-        guard !isAnimating else { return }
+        guard !visibility.isAnimating else { return }
 
-        // Check if there are any visible windows
-        let hasVisibleWindow = NSApp.windows.contains { $0.isVisible } && NSApp.isActive
-
-        if hasVisibleWindow {
+        if visibility.isShown {
             // App is in the foreground with visible windows → hide
-            hideWithAnimation()
+            visibility.hide()
         } else {
             // Otherwise (background / window not visible) → activate and show
-            showWithAnimation()
+            visibility.show()
         }
     }
 
     /// Handle new-chat hotkey: activate the window, then ask WebViewModel for a new chat
     func onNewChatHotKeyPressed() {
-        guard !isAnimating else { return }
+        let visibility = WindowVisibility.shared
+        guard !visibility.isAnimating else { return }
 
-        let hasVisibleWindow = NSApp.windows.contains { $0.isVisible } && NSApp.isActive
-
-        if hasVisibleWindow {
+        if visibility.isShown {
             // Window is already visible, request a new chat directly
             NotificationCenter.default.post(name: .newChatRequested, object: nil)
         } else {
             // Activate and show window first, then request a new chat
-            showWithAnimation {
+            visibility.show {
                 // Delay slightly to ensure the window and WebView are fully ready
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     NotificationCenter.default.post(name: .newChatRequested, object: nil)
                 }
             }
-        }
-    }
-
-    // MARK: - Animation Methods
-
-    /// Show window with fade-in animation
-    /// - Parameter completion: optional callback after activation completes
-    private func showWithAnimation(completion: (@MainActor () -> Void)? = nil) {
-        let useAnimation = SettingsManager.shared.windowAnimation
-
-        NSApp.activate(ignoringOtherApps: true)
-
-        for window in NSApp.windows where window.delegate is AppDelegate {
-            if useAnimation {
-                // Set fully transparent first, then fade in
-                window.alphaValue = 0
-            }
-            window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
-
-            if useAnimation {
-                isAnimating = true
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = animationDuration
-                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                    window.animator().alphaValue = 1.0
-                }, completionHandler: { [weak self] in
-                    // AppKit calls the completion handler on the main thread
-                    MainActor.assumeIsolated {
-                        self?.isAnimating = false
-                        completion?()
-                    }
-                })
-            } else {
-                window.alphaValue = 1.0
-                completion?()
-            }
-        }
-    }
-
-    /// Hide window with fade-out animation
-    private func hideWithAnimation() {
-        let useAnimation = SettingsManager.shared.windowAnimation
-
-        if useAnimation {
-            isAnimating = true
-            // Perform fade-out animation on all main windows
-            for window in NSApp.windows where window.delegate is AppDelegate {
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = animationDuration
-                    context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                    window.animator().alphaValue = 0
-                }, completionHandler: { [weak self] in
-                    // AppKit calls the completion handler on the main thread
-                    MainActor.assumeIsolated {
-                        NSApp.hide(nil)
-                        // Restore alphaValue for the next show
-                        window.alphaValue = 1.0
-                        self?.isAnimating = false
-                    }
-                })
-            }
-        } else {
-            NSApp.hide(nil)
         }
     }
 }
