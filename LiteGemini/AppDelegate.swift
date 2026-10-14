@@ -2,8 +2,12 @@ import SwiftUI
 import Sparkle
 
 class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    /// Sparkle updater controller, initialized at app launch
-    let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    /// Sparkle updater controller; lazy so it can pass self as the user driver delegate.
+    /// applicationWillFinishLaunching creates it at the latest, which starts the updater.
+    private(set) lazy var updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: self)
+
+    /// A scheduled check found an update while the app was hidden; show it when the user comes back
+    private var hasDeferredUpdate = false
 
     /// Adaptive surface color matching Gemini's dark (#131314) and light (#FFFFFF) themes
     static let geminiSurfaceNSColor = NSColor(name: nil) { appearance in
@@ -11,6 +15,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return isDark
             ? NSColor(srgbRed: 0x13 / 255.0, green: 0x13 / 255.0, blue: 0x14 / 255.0, alpha: 1.0)
             : NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        _ = updaterController
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -47,6 +55,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard hasDeferredUpdate else { return }
+        // Wait for the main window to come forward so the update alert lands on top of it
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard self.hasDeferredUpdate, NSApp.isActive else { return }
+            // Brings the already-found update into focus
+            self.updaterController.checkForUpdates(nil)
+        }
+    }
+
     // MARK: - NSWindowDelegate
 
     /// Intercept window close event: hide the app instead of destroying it to preserve WebView lifecycle
@@ -68,5 +86,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isMovableByWindowBackground = false
         window.backgroundColor = Self.geminiSurfaceNSColor
         window.toolbar = nil
+    }
+}
+
+// MARK: - SPUStandardUserDriverDelegate
+
+/// Gentle update reminders: a scheduled check that finds an update while the app is hidden
+/// would otherwise pop the app up from the background. Hold the alert until the user brings
+/// the app back instead.
+extension AppDelegate: SPUStandardUserDriverDelegate {
+    var supportsGentleScheduledUpdateReminders: Bool { true }
+
+    func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
+        !NSApp.isHidden
+    }
+
+    func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
+        if !handleShowingUpdate {
+            hasDeferredUpdate = true
+        }
+    }
+
+    func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {
+        hasDeferredUpdate = false
+    }
+
+    func standardUserDriverWillFinishUpdateSession() {
+        hasDeferredUpdate = false
     }
 }
