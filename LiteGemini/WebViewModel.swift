@@ -180,8 +180,13 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     @Published var errorMessage: String?
     /// Whether the page input field is ready (contenteditable or textarea detected)
     @Published var isPageReady: Bool = false
+    /// Latest download notice to show in the window; nil when hidden
+    @Published var downloadNotice: DownloadNotice?
 
     let webView: WKWebView
+
+    /// Owns the web view's downloads; kept here because WKDownload's delegate is weak
+    let downloadManager = DownloadManager()
 
     /// Background timeout task; navigates back to homepage on timeout
     private var backgroundTimeoutTask: Task<Void, Never>?
@@ -233,6 +238,11 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
+
+        // Surface download results as notices in the window
+        downloadManager.onNotice = { [weak self] notice in
+            self?.downloadNotice = notice
+        }
 
         // Apply User-Agent edits from Settings; they take effect on the next load (Cmd+R)
         settings.$userAgent
@@ -337,6 +347,33 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
     // MARK: - WKNavigationDelegate
 
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        decisionHandler(DownloadManager.downloadPolicy(for: navigationAction))
+    }
+
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationResponse: WKNavigationResponse,
+                 decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
+        decisionHandler(DownloadManager.downloadPolicy(
+            for: navigationResponse.response,
+            canShowMIMEType: navigationResponse.canShowMIMEType
+        ))
+    }
+
+    func webView(_ webView: WKWebView,
+                 navigationAction: WKNavigationAction,
+                 didBecome download: WKDownload) {
+        downloadManager.begin(download)
+    }
+
+    func webView(_ webView: WKWebView,
+                 navigationResponse: WKNavigationResponse,
+                 didBecome download: WKDownload) {
+        downloadManager.begin(download)
+    }
+
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         isLoading = true
         errorMessage = nil
@@ -357,7 +394,7 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         let nsError = error as NSError
         // Ignore cancellation errors, which are normal navigation cancellations
-        if nsError.code != NSURLErrorCancelled {
+        if !isIgnoredNavigationError(nsError) {
             print("Navigation failed: \(error.localizedDescription)")
             errorMessage = String(localized: "Failed to load. Please check your network connection.")
         }
@@ -366,11 +403,21 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let nsError = error as NSError
-        if nsError.code != NSURLErrorCancelled {
+        if !isIgnoredNavigationError(nsError) {
             print("Provisional navigation failed: \(error.localizedDescription)")
             errorMessage = String(localized: "Unable to connect to Gemini. Please check your network connection.")
         }
         isLoading = false
+    }
+
+    /// True for navigation errors that must not surface as load failures: normal
+    /// cancellations, and navigations that turned into downloads (WebKit fails
+    /// those with legacy WebKit error code 102).
+    private func isIgnoredNavigationError(_ error: NSError) -> Bool {
+        if error.code == NSURLErrorCancelled { return true }
+        // WebKitErrorDomain is deprecated in Swift, so compare the raw domain string
+        return error.domain == "WebKitErrorDomain"
+            && error.code == WebKitErrorFrameLoadInterruptedByPolicyChange
     }
 
     // MARK: - Input Ready Polling

@@ -191,6 +191,26 @@
         }
       }
     },
+    "Download failed: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载失败：%@"
+          }
+        }
+      }
+    },
+    "Downloaded %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已下载 %@"
+          }
+        }
+      }
+    },
     "Edit" : {
       "localizations" : {
         "zh-Hans" : {
@@ -368,6 +388,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "恢复默认"
+          }
+        }
+      }
+    },
+    "Show in Finder" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在访达中显示"
           }
         }
       }
