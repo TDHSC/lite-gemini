@@ -1,8 +1,7 @@
 # Implementation plan: catch up with the current Gemini web app
 
-Status: Phase A (A1–A5) shipped in v0.4.1 on 2026-10-13. Phase B accepted by the owner;
-Phase C (default temporary chat) in progress. v0.4.2 will ship B and C together. Written
-2026-10-13.
+Status: complete. Phase A (A1–A5) shipped in v0.4.1, and Phases B and C shipped together in
+v0.4.2, both on 2026-10-13. Written 2026-10-13.
 
 This plan is for an implementer who does not know the codebase. Follow it top to bottom,
 one task at a time. Every task says which files to touch, where, which Apple APIs to use,
@@ -890,8 +889,9 @@ be brought forward instead of the main window.
 - The `routertest` harness passes.
 - Release build is clean.
 - Owner checks B-1 … B-8.
-- After release, with owner approval, close issue #2 with a comment that names the
-  release.
+- No issue to close. Issue #2 lives in the archived upstream repository
+  (Jraaay/Gemini-Next-Desktop), and lite-gemini has no matching issue; the release notes
+  reference it instead.
 
 ---
 
@@ -1118,7 +1118,7 @@ must say:
    notes are:
    - **New:**
      - Google sign-in and app-connection popups now open inside Lite Gemini, so adding a
-       second Google account works (closes #2).
+       second Google account works (fixes upstream issue Jraaay/Gemini-Next-Desktop#2).
      - New setting: new chats start as temporary chats.
    - **Notes:** the same as v0.4.1.
 
