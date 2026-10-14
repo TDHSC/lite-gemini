@@ -424,6 +424,33 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         return nil
     }
 
+    /// Show the system open panel for `<input type=file>` elements, which Apple disables
+    /// unless the UI delegate implements this method
+    func webView(_ webView: WKWebView,
+                 runOpenPanelWith parameters: WKOpenPanelParameters,
+                 initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping @MainActor ([URL]?) -> Void) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = parameters.allowsMultipleSelection
+        if parameters.allowsDirectories {
+            // The page asked for a directory (webkitdirectory, used by "Import code → Upload folder")
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+        } else {
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+        }
+
+        if let window = webView.window {
+            panel.beginSheetModal(for: window) { response in
+                completionHandler(response == .OK ? panel.urls : nil)
+            }
+        } else {
+            let response = panel.runModal()
+            completionHandler(response == .OK ? panel.urls : nil)
+        }
+    }
+
     // MARK: - WKScriptMessageHandler (IME Enter Fix)
 
     func userContentController(_ userContentController: WKUserContentController,
