@@ -124,24 +124,33 @@ final class DownloadManager: NSObject, WKDownloadDelegate {
 
     // MARK: - Private Methods
 
-    /// Returns a destination in `destinationDirectory` that does not collide with an existing
-    /// file, appending " (1)", " (2)", … before the extension. After 1000 attempts, falls back
-    /// to a UUID-based name. WebKit fails the download if the destination already exists.
+    /// Returns a destination in `destinationDirectory` that does not collide with an
+    /// existing file or a name already reserved by another in-flight download, appending
+    /// " (1)", " (2)", … before the extension. After 1000 attempts, falls back to a
+    /// UUID-based name. WebKit fails the download if the destination already exists.
     private func uniqueDestination(forName name: String) -> URL {
         let base = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension
 
         var candidate = destinationDirectory.appendingPathComponent(name)
         var counter = 1
-        while FileManager.default.fileExists(atPath: candidate.path) && counter <= 1000 {
+        while isTaken(candidate) && counter <= 1000 {
             let numberedName = ext.isEmpty ? "\(base) (\(counter))" : "\(base) (\(counter)).\(ext)"
             candidate = destinationDirectory.appendingPathComponent(numberedName)
             counter += 1
         }
-        if FileManager.default.fileExists(atPath: candidate.path) {
+        if isTaken(candidate) {
             let uuidName = ext.isEmpty ? UUID().uuidString : "\(UUID().uuidString).\(ext)"
             candidate = destinationDirectory.appendingPathComponent(uuidName)
         }
         return candidate
+    }
+
+    /// True when a file already exists at the URL, or another in-flight download has
+    /// already reserved it: two downloads with the same name can start before either
+    /// file exists on disk
+    private func isTaken(_ url: URL) -> Bool {
+        if FileManager.default.fileExists(atPath: url.path) { return true }
+        return destinations.values.contains(url)
     }
 }
