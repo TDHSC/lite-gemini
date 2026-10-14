@@ -289,6 +289,9 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
         settings.$defaultTemporaryChat
             .dropFirst()
+            // @Published emits from willSet; hop so the property is stored
+            // before isEnabled reads it.
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] enabled in
                 guard enabled, let self, self.webView.url?.path == "/app" else { return }
                 self.temporaryChatController.ensure(reason: "setting")
