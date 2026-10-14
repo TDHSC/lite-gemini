@@ -64,8 +64,7 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
         var actuallyComposing = false;
         var fixInProgress = false;
-        var syntheticEnterInFlight = false;
-        var syntheticEnterTimer = null;
+        var syntheticKeyTimer = null;
 
         document.addEventListener('compositionstart', function(e) {
             actuallyComposing = true;
@@ -78,31 +77,36 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
             // FIX for Gemini's "recent composition" flag:
             // Gemini internally tracks composition state and swallows the first
-            // Enter after compositionend. We dispatch a synthetic Enter to clear
-            // that flag, so the user's real Enter goes through normally.
+            // Enter after compositionend. Its keydown handler clears that flag on
+            // ANY keydown. We dispatch a synthetic Shift key to clear that flag,
+            // so the user's next real Enter goes through normally on the first
+            // press.
+            //
+            // A synthetic Enter must NEVER be used here. Shift can never submit
+            // in any Gemini path, but an Enter submits whenever Gemini's swallow
+            // flag is not armed — observed when the composer has attachments,
+            // where it sent the prompt immediately.
             //
             // HOWEVER, if an Enter keydown arrives within 50ms of compositionend,
             // it means the Enter key was used to confirm the IME candidate
-            // (scenario 1). In that case, we must NOT dispatch synthetic Enter,
+            // (scenario 1). In that case, we must NOT dispatch a synthetic key,
             // because Gemini's flag-clearing on that Enter is the correct behavior.
-            if (syntheticEnterTimer) clearTimeout(syntheticEnterTimer);
-            syntheticEnterTimer = setTimeout(function() {
-                syntheticEnterTimer = null;
+            if (syntheticKeyTimer) clearTimeout(syntheticKeyTimer);
+            syntheticKeyTimer = setTimeout(function() {
+                syntheticKeyTimer = null;
                 var target = document.activeElement || document.body;
-                syntheticEnterInFlight = true;
-                console.log('[IME Debug] >>> dispatching synthetic Enter to clear Gemini flag');
+                console.log('[IME Debug] >>> dispatching synthetic Shift to clear Gemini flag');
                 var synDown = new KeyboardEvent('keydown', {
-                    key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
-                    bubbles: true, cancelable: true
+                    key: 'Shift', code: 'ShiftLeft', keyCode: 16, which: 16,
+                    bubbles: true, cancelable: true, shiftKey: true
                 });
                 target.dispatchEvent(synDown);
                 var synUp = new KeyboardEvent('keyup', {
-                    key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+                    key: 'Shift', code: 'ShiftLeft', keyCode: 16, which: 16,
                     bubbles: true, cancelable: true
                 });
                 target.dispatchEvent(synUp);
-                syntheticEnterInFlight = false;
-                console.log('[IME Debug] >>> synthetic Enter dispatched, defaultPrevented=' + synDown.defaultPrevented);
+                console.log('[IME Debug] >>> synthetic Shift dispatched, defaultPrevented=' + synDown.defaultPrevented);
             }, 50);
         }, true);
 
@@ -112,18 +116,10 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
             // If a real Enter arrives right after compositionend (within 50ms),
             // cancel the synthetic — this Enter IS the IME confirmation key
-            if (syntheticEnterTimer && e.isTrusted) {
-                clearTimeout(syntheticEnterTimer);
-                syntheticEnterTimer = null;
+            if (syntheticKeyTimer && e.isTrusted) {
+                clearTimeout(syntheticKeyTimer);
+                syntheticKeyTimer = null;
                 console.log('[IME Debug] keydown Enter: cancelled synthetic (IME confirmation Enter detected)');
-            }
-
-            // Block the synthetic Enter from our compositionend fix
-            // so it only reaches Gemini's handler (clears their flag)
-            // but doesn't trigger our own fix logic
-            if (syntheticEnterInFlight) {
-                console.log('[IME Debug] keydown Enter: SYNTHETIC (clearing Gemini flag)');
-                return;
             }
 
             console.log('[IME Debug] keydown Enter: isComposing=' + e.isComposing +
@@ -153,14 +149,14 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
         // Bubble-phase: check if page preventDefault'd
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !syntheticEnterInFlight) {
+            if (e.key === 'Enter') {
                 console.log('[IME Debug] keydown Enter (BUBBLE): defaultPrevented=' + e.defaultPrevented);
             }
         }, false);
 
         // Post-Enter state check
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey && !syntheticEnterInFlight) {
+            if (e.key === 'Enter' && !e.shiftKey) {
                 setTimeout(function() {
                     var el = document.activeElement;
                     var textLen = el ? (el.textContent || '').length : 0;
