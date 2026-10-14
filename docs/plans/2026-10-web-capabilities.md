@@ -1008,7 +1008,14 @@ harness can compile and test it on its own.
   3. Cancel any running task and start a new one that:
      - sleeps 300 ms
      - polls the probe in click mode every 250 ms for up to 10 s:
-       - `"on"`: log `already-on` and stop
+       - `"on"`: confirm before stopping. Sleep 600 ms, then probe once in verify mode:
+         - still `"on"`: log `already-on` and stop
+         - otherwise: keep polling
+
+         Why: Gemini resets a new chat to a normal chat (its new-chat code requests
+         `isTemporaryChat: false` by default), and that reset can land after the first
+         probe. A single early read would see the previous chat's state, stop, and leave
+         the new chat normal.
        - `"missing"`: keep polling
        - `"clicked"`: record the click time, sleep 500 ms, run the probe once in verify
          mode, log `clicked → <result>`, and stop. Never click a second time in the same
@@ -1067,6 +1074,7 @@ harness can compile and test it on its own.
 | 4 | enabled, button off | `ensure` twice, 50 ms apart | `__clicks == 1`, class on |
 | 5 | enabled, button inserted after 1.5 s | `ensure` | `__clicks == 1`, class on |
 | 6 | enabled, no button | `ensure`, wait 11 s | `__clicks == 0`, no crash |
+| 8 | enabled, button starts on; the fixture turns it off 400 ms after `ensure` is called, imitating Gemini resetting a new chat | `ensure` | `__clicks == 1`, class on |
 | 7 | intent script injected; the harness counts `temporaryChatIntent` messages | a synthetic (untrusted) click on a fixture `<new-chat-button>`, and a synthetic Cmd+Shift+O keydown | 0 messages. The script ignores untrusted events, so the app's own synthetic events and page scripts cannot trigger it. |
 
 Also run the Release universal build (zero warnings), and rerun `routertest`, `dltest2`,
