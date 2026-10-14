@@ -1,0 +1,18 @@
+<html><body><h2>New</h2>
+<ul>
+<li><strong>Keep Running in Background</strong> (Settings → General, off by default). When it's on, closing the window, ⌘W, ⌘Q, or the show/hide shortcut hides Lite Gemini and removes it from the Dock and ⌘Tab, but the app keeps running and your chat stays loaded. To bring it back, press the shortcut or open Lite Gemini again from Spotlight, Launchpad, or Finder. You get the same window, without a reload. To quit, turn the setting off, then press ⌘Q. Logging out, shutting down, and installing an update still quit the app normally.</li>
+<li>Update prompts no longer appear while Lite Gemini is hidden. If an automatic check finds an update in the background, the prompt shows up the next time you open the window.</li>
+</ul>
+<h2>Fixes</h2>
+<ul>
+<li>The menu bar no longer shows two View menus. Reload, Back, and Forward are now in the standard View menu.</li>
+<li>⌘W now fades the window out like the close button does (when Window Animation is on).</li>
+</ul>
+<h2>Notes</h2>
+<ul>
+<li>The app is not notarized, so macOS blocks it on first launch. Open <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>, or run:
+<div class="highlight highlight-source-shell"><pre class="notranslate">xattr -dr com.apple.quarantine <span class="pl-s"><span class="pl-pds">"</span>/Applications/Lite Gemini.app<span class="pl-pds">"</span></span></pre></div>
+</li>
+<li>After updating, macOS may ask for microphone permission again. This is expected with the current signing setup; grant it once per update.</li>
+</ul>
+<p><strong>Full Changelog</strong>: <a class="commit-link" href="https://github.com/TDHSC/lite-gemini/compare/v0.4.3...v0.4.4">TDHSC/lite-gemini@<tt>v0.4.3...v0.4.4</tt></a></p></body></html>
