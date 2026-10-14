@@ -554,16 +554,6 @@
         }
       }
     },
-    "View" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "视图"
-          }
-        }
-      }
-    },
     "Window Animation" : {
       "localizations" : {
         "zh-Hans" : {

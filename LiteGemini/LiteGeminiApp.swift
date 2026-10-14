@@ -33,8 +33,9 @@ struct LiteGeminiApp: App {
                 }
                 .keyboardShortcut("w", modifiers: .command)
             }
-            // Global Cmd+R to reload, Cmd+[ / Cmd+] for navigation
-            CommandMenu("View") {
+            // Global Cmd+R to reload, Cmd+[ / Cmd+] for navigation, added to the system
+            // View menu (CommandMenu("View") would create a second View menu)
+            CommandGroup(before: .toolbar) {
                 Button("Reload Page") {
                     webViewModel.webView.reload()
                 }
@@ -51,6 +52,8 @@ struct LiteGeminiApp: App {
                     webViewModel.webView.goForward()
                 }
                 .keyboardShortcut("]", modifiers: .command)
+
+                Divider()
             }
         }
 
