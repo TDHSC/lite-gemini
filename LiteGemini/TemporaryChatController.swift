@@ -91,8 +91,16 @@ final class TemporaryChatController {
                 guard !Task.isCancelled else { return }
                 switch await self.probe(webView: webView, click: true) {
                 case "on":
-                    Self.logger.notice("ensure [\(reason, privacy: .public)]: already-on")
-                    return
+                    // Gemini resets a new chat to normal (isTemporaryChat: false)
+                    // after our first read, so an early "on" can be the previous
+                    // chat. Confirm before stopping.
+                    try? await Task.sleep(for: .milliseconds(600))
+                    guard !Task.isCancelled else { return }
+                    if await self.probe(webView: webView, click: false) == "on" {
+                        Self.logger.notice("ensure [\(reason, privacy: .public)]: already-on")
+                        return
+                    }
+                    continue
                 case "clicked":
                     self.lastClickAt = ContinuousClock.now
                     try? await Task.sleep(for: .milliseconds(500))
