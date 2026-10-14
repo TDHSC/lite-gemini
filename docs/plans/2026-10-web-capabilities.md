@@ -1,6 +1,7 @@
 # Implementation plan: catch up with the current Gemini web app
 
-Status: Phase A (A1–A5) shipped in v0.4.1 on 2026-10-13. Phase B not started. Written
+Status: Phase A (A1–A5) shipped in v0.4.1 on 2026-10-13. Phase B accepted by the owner;
+Phase C (default temporary chat) in progress. v0.4.2 will ship B and C together. Written
 2026-10-13.
 
 This plan is for an implementer who does not know the codebase. Follow it top to bottom,
@@ -909,7 +910,212 @@ be brought forward instead of the main window.
      pick with an attachment present
 
    The coordinator reads the `NewWindow` logs from that session.
-3. After the owner approves, follow §R for version `0.4.2`.
+3. The owner accepted Phase B on 2026-10-13, then asked for Phase C before any release.
+   v0.4.2 therefore ships Phase B and Phase C together (see Phase C completion).
+
+---
+
+## Phase C (ships with Phase B in v0.4.2): default temporary chat
+
+Branch `feat/default-temp-chat` from the HEAD of `feat/popup-windows`, which is the commit
+that added this Phase C section on top of `f8e0201`. It contains all of Phase B, so
+releasing this branch releases both phases.
+
+The owner tests only once, after the phase is finished and reviewed (same rule as
+Phase B).
+
+### Background (checked in Gemini's bundles on 2026-10-13)
+
+- **No URL for temporary chat.** Temporary chat is Gemini router *state*
+  (`{isTemporaryChat: true}`), not a URL. There is no link that opens a temporary chat
+  directly.
+- **The toggle element.** It is an Angular component, `<temp-chat-button>`. Its button has
+  the class `temp-chat-button`, plus `temp-chat-on` while temporary chat is on. These names
+  do not depend on the UI language. The `aria-label` and tooltip ("Temporary chat",
+  "Turn on temporary chat") are localized, so never use them.
+- **New-chat elements.** The page's own new-chat controls are `<new-chat-button>` and
+  `[data-test-id="side-nav-sparkle-button"]`. The user can also press Cmd+Shift+O inside
+  the page.
+- **Signed-out pages have no temporary chat.** Automated tests therefore use a fixture
+  page that imitates the element names above.
+
+### C1. Setting: new chats start as temporary chats
+
+**Behavior.** When the setting is on, every time a new, empty chat opens in the main
+window, the app makes sure Gemini's temporary chat is on:
+- it never clicks the toggle when the button already has `temp-chat-on`
+- it never turns temporary chat off
+- if the user turns it off inside a chat, it stays off until the next new chat
+
+**Files.**
+- `LiteGemini/SettingsManager.swift`
+- `LiteGemini/SettingsView.swift`
+- `LiteGemini/Localizable.xcstrings`
+- new `LiteGemini/TemporaryChatController.swift`
+- `LiteGemini/WebViewModel.swift`
+
+**Step 1: the setting.** In `SettingsManager.swift`, follow the existing `windowAnimation`
+pattern exactly:
+- a `Defaults` entry `defaultTemporaryChat = false`
+- a `Keys` entry `defaultTemporaryChat = "defaultTemporaryChat"`
+- `@Published var defaultTemporaryChat: Bool`, saving in `didSet`
+- in `init`, read the stored value only if one exists; otherwise use the default
+
+**Step 2: the UI.** In `SettingsView.swift`, Section "General", directly after the
+"Window Animation" toggle, add:
+- a toggle labeled `New Chats Start as Temporary Chats`, bound to the setting
+- under it, a caption: `Lite Gemini turns on Gemini's temporary chat whenever a new chat
+  opens. If you turn it off in a chat, it stays off until the next new chat.`
+
+Style the caption like the other captions in this file.
+
+**Step 3: strings.** Add both strings to `Localizable.xcstrings`, zh-Hans `translated`:
+
+| Key | zh-Hans |
+|---|---|
+| `New Chats Start as Temporary Chats` | `新对话默认使用临时会话` |
+| the caption above | `每次打开新对话时，Lite Gemini 会自动开启 Gemini 的临时会话。在某个对话里手动关闭后，到下一个新对话前都保持关闭。` |
+
+**Step 4: `TemporaryChatController.swift` (new).** It is separate from `WebViewModel` so a
+harness can compile and test it on its own.
+- **Type and inputs.** A `final class`, main-actor isolated by default. Its initializer
+  takes the main `WKWebView` (stored weakly) and an `isEnabled: () -> Bool` closure.
+- **Logging.** A `Logger` with subsystem `io.github.tdhsc.LiteGemini` and category
+  `TemporaryChat`. Log one `.notice` line per attempt with the reason and the final
+  result (`already-on`, `clicked → on`, `clicked → off`, `missing`, `disabled`, or
+  `skipped-recent-click`).
+- **`static let intentScriptSource: String`.** A page script, injected at document start
+  in the main frame only. It installs two capture-phase listeners on `document`. Each
+  posts the message `newChat` to the script message handler named `temporaryChatIntent`,
+  and only for trusted events (`event.isTrusted`):
+  - a `click` whose target is inside `new-chat-button` or
+    `[data-test-id="side-nav-sparkle-button"]` (use `closest`)
+  - a `keydown` with `metaKey`, `shiftKey`, no `altKey`, no `ctrlKey`, and
+    `key.toLowerCase() === "o"`
+- **The probe script.** A private builder that produces one JavaScript snippet. The
+  snippet finds `document.querySelector("temp-chat-button")`, then the element with class
+  `temp-chat-button` inside it (or the host itself), and returns:
+  - `"missing"` if neither exists
+  - `"on"` if that element has the class `temp-chat-on`
+  - in click mode: clicks it once and returns `"clicked"`
+  - in verify mode: returns `"off"`
+- **`func ensure(reason: String)`:**
+  1. If `isEnabled()` is false, log `disabled` and return.
+  2. If the last click was less than 2 seconds ago (keep a
+     `ContinuousClock.Instant?`), log `skipped-recent-click` and return. Several triggers
+     can fire for the same new chat, and a second click before Gemini updates the class
+     would turn temporary chat back off.
+  3. Cancel any running task and start a new one that:
+     - sleeps 300 ms
+     - polls the probe in click mode every 250 ms for up to 10 s:
+       - `"on"`: log `already-on` and stop
+       - `"missing"`: keep polling
+       - `"clicked"`: record the click time, sleep 500 ms, run the probe once in verify
+         mode, log `clicked → <result>`, and stop. Never click a second time in the same
+         task.
+     - on timeout, logs `missing`
+- **`func cancel()`.** Cancels the task.
+
+**Step 5: wire it into `WebViewModel.swift`.**
+- **Ownership.** Add a `temporaryChatController` property. Create it right after the
+  delegates are set, passing `webView` and a closure that captures `self` weakly and
+  reads `settings.defaultTemporaryChat`.
+- **Intent script.** Add `TemporaryChatController.intentScriptSource` as a
+  `WKUserScript` (document start, main frame only) next to the existing scripts. Register
+  the `temporaryChatIntent` message handler through the existing `WeakScriptMessageHandler`.
+  Remove that handler in `isolated deinit`, like the others.
+- **Triggers.** Each one calls `ensure(reason:)` with the reason in brackets:
+  - (a) **`url`:** `webView.publisher(for: \.url)`, mapped to the path, with
+    `removeDuplicates()`. When the path becomes exactly `/app`, call `ensure`. This covers
+    leaving a conversation for a new chat and Gemini's in-app navigation. Store the
+    subscription in `cancellables`.
+  - (b) **`load`:** in `webView(_:didFinish:)`, when the path is `/app`. A full reload or
+    first launch resets Gemini's temporary-chat state even though the path did not change.
+  - (c) **`hotkey`:** at the end of `handleNewChatRequested`, after the shortcut is sent
+    and the fallback task is scheduled.
+  - (d) **`page`:** in `userContentController(_:didReceive:)`, a new case for
+    `temporaryChatIntent`. This covers the page's own New chat while the URL stays `/app`.
+  - (e) **`setting`:** `settings.$defaultTemporaryChat.dropFirst()`. When it turns true
+    and the current path is `/app`, call `ensure`. Turning the setting off does nothing to
+    the current chat.
+- **Deinit.** Call `temporaryChatController.cancel()` in `isolated deinit`.
+
+**Traps.**
+- **Main window only.** Popups never get the controller or the intent script.
+- **No localized labels.** Do not match the toggle or new-chat controls by text or
+  `aria-label`.
+- **One click per new chat.** The 2-second guard and the single click per task are what
+  prevent toggling temporary chat back off. Do not remove them to "make it more reliable".
+
+**Verification: harness `tempchattest`** (Appendix A recipe).
+- **Sources.** Compile the real `TemporaryChatController.swift` against a fixture page
+  served through a `WKURLSchemeHandler` (`lgtest://app/app`, so the path is `/app`).
+- **Fixture page.** It contains
+  `<temp-chat-button><button class="temp-chat-button"></button></temp-chat-button>`.
+  The button's click handler increments `window.__clicks`, then toggles `temp-chat-on`
+  after 100 ms, imitating Gemini's asynchronous update.
+- **Query parameters.** The fixture takes query parameters to:
+  - start with the button already on
+  - insert the button only after 1.5 s
+  - omit the button entirely
+
+| # | Setup | Action | Expected |
+|---|---|---|---|
+| 1 | enabled, button off | `ensure` | `__clicks == 1`, class on |
+| 2 | enabled, button already on | `ensure` | `__clicks == 0` |
+| 3 | disabled, button off | `ensure` | `__clicks == 0` |
+| 4 | enabled, button off | `ensure` twice, 50 ms apart | `__clicks == 1`, class on |
+| 5 | enabled, button inserted after 1.5 s | `ensure` | `__clicks == 1`, class on |
+| 6 | enabled, no button | `ensure`, wait 11 s | `__clicks == 0`, no crash |
+| 7 | intent script injected; the harness counts `temporaryChatIntent` messages | a synthetic (untrusted) click on a fixture `<new-chat-button>`, and a synthetic Cmd+Shift+O keydown | 0 messages. The script ignores untrusted events, so the app's own synthetic events and page scripts cannot trigger it. |
+
+Also run the Release universal build (zero warnings), and rerun `routertest`, `dltest2`,
+and `imetest2`. The latter two cover the Phase A code paths that `WebViewModel` changes
+touch.
+
+**Commit.** Subject: `feat: add a setting to start new chats as temporary chats`. Body
+must say:
+- Temporary chat has no URL, so the app turns on Gemini's own toggle.
+- Which element names it relies on, and why not labels.
+- The five triggers.
+- The 2-second and single-click guards.
+- Trade-off: it depends on Gemini's internal component names. If Google renames them the
+  setting silently does nothing, and the `TemporaryChat` log shows `missing`.
+
+### Phase C completion
+
+1. Report the following to the coordinator, not the owner:
+   - commit hash
+   - `tempchattest`, `routertest`, `dltest2`, and `imetest2` outputs
+   - a clean Release universal build in a fresh `-derivedDataPath` (`/tmp/lg-build-c`)
+2. After review, the owner runs one session:
+   - **Phase C checks:**
+     - **C-1** Turn the setting on; within about 2 s the open new chat is temporary.
+     - **C-2** Send a message in that temporary chat, then click the page's New chat.
+       The new chat is temporary.
+     - **C-3** Press the global new-chat hotkey. The new chat is temporary.
+     - **C-4** In a new temporary chat, turn temporary chat off by hand. It stays off,
+       and the next new chat is temporary again.
+     - **C-5** Quit and relaunch the app. The first chat is temporary.
+     - **C-6** Collapse the sidebar and start a new chat. It is still temporary.
+     - **C-7** Turn the setting off. New chats are normal, and the current chat is
+       unchanged.
+     - **C-8** With the app language set to Chinese, the setting shows in Chinese and
+       works.
+   - **Smoke checks:** the new-chat hotkey (A4), one sign-in popup (B-1 or B-3), and an
+     IME candidate pick.
+
+   The coordinator reads the `TemporaryChat` and `NewWindow` logs from that session.
+3. After the owner approves, follow §R for version `0.4.2`. In §R step 6, the release
+   notes are:
+   - **New:**
+     - Google sign-in and app-connection popups now open inside Lite Gemini, so adding a
+       second Google account works (closes #2).
+     - New setting: new chats start as temporary chats.
+   - **Notes:** the same as v0.4.1.
+
+   Merge `feat/default-temp-chat` into `main` with a fast-forward. It contains Phase B.
+   Delete `feat/popup-windows` and `feat/default-temp-chat` afterwards.
 
 ---
 
