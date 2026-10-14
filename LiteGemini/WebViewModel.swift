@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import Combine
+import os
 
 extension Notification.Name {
     /// Posted after browsing data has been cleared from Settings
@@ -29,6 +30,11 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     private enum Constants {
         static let geminiURL = URL(string: "https://gemini.google.com/app")!
     }
+
+    /// Logs new-window requests so misrouted popup flows can be diagnosed from real
+    /// signed-in sessions, which cannot be reproduced headlessly. Query strings and
+    /// fragments are never logged; they can contain tokens and email addresses.
+    private static let newWindowLogger = Logger(subsystem: "io.github.tdhsc.LiteGemini", category: "NewWindow")
 
     /// Settings manager reference
     private let settings = SettingsManager.shared
@@ -508,10 +514,42 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
+        // Record the request for popup-routing diagnosis. `.notice` because lower levels
+        // are not persisted and the logs are read after the session.
+        let targetURL = navigationAction.request.url
+        Self.newWindowLogger.notice("""
+        new-window: scheme=\(targetURL?.scheme ?? "nil", privacy: .public) \
+        host=\(targetURL?.host ?? "nil", privacy: .public) \
+        path=\(targetURL?.path ?? "nil", privacy: .public) \
+        type=\(Self.navigationTypeName(navigationAction.navigationType), privacy: .public) \
+        size=\(Self.windowSizeDescription(windowFeatures), privacy: .public) \
+        source=\(navigationAction.sourceFrame.securityOrigin.host, privacy: .public) \
+        mainFrame=\(navigationAction.sourceFrame.isMainFrame, privacy: .public)
+        """)
         if let url = navigationAction.request.url {
             NSWorkspace.shared.open(url)
         }
         return nil
+    }
+
+    /// A readable name for a WKNavigationType, for the new-window log
+    private static func navigationTypeName(_ type: WKNavigationType) -> String {
+        switch type {
+        case .linkActivated: return "linkActivated"
+        case .formSubmitted: return "formSubmitted"
+        case .backForward: return "backForward"
+        case .reload: return "reload"
+        case .formResubmitted: return "formResubmitted"
+        case .other: return "other"
+        @unknown default: return "unknown"
+        }
+    }
+
+    /// The opener-supplied window size for the new-window log, e.g. "520x680" or "nilxnil"
+    private static func windowSizeDescription(_ features: WKWindowFeatures) -> String {
+        let width = features.width.map { String($0.intValue) } ?? "nil"
+        let height = features.height.map { String($0.intValue) } ?? "nil"
+        return "\(width)x\(height)"
     }
 
     /// Show the system open panel for `<input type=file>` elements, which Apple disables
