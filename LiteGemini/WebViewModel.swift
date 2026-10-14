@@ -451,6 +451,23 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         }
     }
 
+    /// Grant microphone capture only to gemini.google.com over https; deny everything else.
+    /// Granting avoids WebKit's extra per-session prompt on top of the one-time macOS prompt.
+    func webView(_ webView: WKWebView,
+                 requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+                 initiatedByFrame frame: WKFrameInfo,
+                 type: WKMediaCaptureType,
+                 decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void) {
+        // "protocol" is a Swift keyword, hence the backticks on the scheme property
+        if origin.`protocol` == "https",
+           origin.host == "gemini.google.com",
+           type == .microphone {
+            decisionHandler(.grant)
+        } else {
+            decisionHandler(.deny)
+        }
+    }
+
     // MARK: - WKScriptMessageHandler (IME Enter Fix)
 
     func userContentController(_ userContentController: WKUserContentController,
