@@ -628,16 +628,21 @@ script (`e.key === "Enter"`). Cases:
 
 ## Phase B (release v0.4.2): popups and multiple accounts (issue #2)
 
-Branch `feat/popup-windows` from `main` after v0.4.1 is released. B1 is a separate commit
-that must be in the owner's hands before B2–B4 are written, because B2's rules depend on
-what B1 records.
+Branch `feat/popup-windows` from the local `main`, which already contains this plan.
+
+**Owner availability (decided 2026-10-13).** The owner tests only once, after the whole
+phase is finished and reviewed.
+- Implement B1–B4 in one go. Do not stop for an owner logging session.
+- B2's rules are therefore designed from what can be known without a signed-in session.
+- B1's log lines stay in the product. During the final acceptance they show what any
+  misrouted flow actually requested, so the rules can be adjusted.
 
 ---
 
 ### B1. Log new-window requests
 
-**Goal.** Learn exactly what Gemini opens in each real signed-in flow before writing the
-routing rules.
+**Goal.** Record every new-window request, so that any flow the routing gets wrong can be
+diagnosed from the logs during acceptance and later.
 
 **Files.** `LiteGemini/WebViewModel.swift`.
 
@@ -652,30 +657,17 @@ routing rules.
   - `windowFeatures.width` and `windowFeatures.height`, or `nil`
   - the source frame's host and whether it is the main frame
 - Use `.notice`, not `.info` or `.debug`. Lower levels are not persisted, and the logs are
-  read after the owner's session.
-- The existing behavior (open in the default browser) stays unchanged in B1.
+  read after the owner's acceptance session.
+- B4 adds the chosen route to the same log line, so one entry shows both the request and
+  the decision.
+- The existing behavior (open in the default browser) stays unchanged in this commit.
 
-**Owner session** (after a Debug build that includes B1). The owner signs in, then does
-these flows in order, noting the clock time of each:
-1. Account menu → Add another account (cancel or finish; note the final URL the browser
-   shows).
-2. Account menu → switch to another account (if one exists).
-3. Customize / Connectors → connect any app (cancel at the consent screen is fine).
-4. A response → Export to Docs (or any "Open in" action).
-5. A response → click a citation or source link.
-
-**Reading the logs.**
+**Reading the logs** (coordinator, during or after the final acceptance):
 `log show --last 60m --style compact --predicate 'subsystem == "io.github.tdhsc.LiteGemini" AND category == "NewWindow"'`
 
-Record a table in this document, below this section, with one row per flow: flow →
-host/path → navigationType → width/height → source frame host. A flow with no entry
-navigated in the same window and needs no handling.
-
-**Decision gate.** Compare that table with the rules in B2. Wherever reality differs,
-update the B2 rules table in this document and get the owner's OK before coding B2.
-
 **Commit.** Subject: `chore: log new-window requests`. Body must say:
-- why: to design popup routing from real flows
+- why: to diagnose popup routing from real signed-in flows, which cannot be reproduced
+  headlessly
 - what is logged, and that query strings are never logged
 - why the level is `.notice`
 
@@ -695,13 +687,16 @@ update the B2 rules table in this document and get the owner's OK before coding 
   - `allow`
   - `moveToMain(URL)`
   - `moveToBrowser(URL)`
-- `NewWindowRouter`, a caseless enum used as a namespace, with two static functions.
+- `NewWindowRouter`, a caseless enum used as a namespace, with three static functions.
   Their inputs are plain values, so tests do not need WebKit objects, which cannot be
   constructed by hand:
   - `route(url: URL?, isLinkActivated: Bool, hasExplicitSize: Bool) -> NewWindowRoute`
+  - `isAccountFlow(initialURL: URL?, hadExplicitSize: Bool) -> Bool`
   - `routeInsidePopup(url: URL, openedForAccount: Bool, startedBlank: Bool, isFirstNavigation: Bool, hadExplicitSize: Bool) -> PopupNavigationDecision`
 
-**`route` rules.** First match wins. These are expected rules; finalize them from B1.
+**`route` rules.** First match wins. Compare hosts and paths case-insensitively. These
+rules are designed without signed-in logs (see the Phase B intro); B1's logs are used to
+adjust them if acceptance finds a misrouted flow.
 
 | # | Condition | Result |
 |---|---|---|
@@ -709,15 +704,25 @@ update the B2 rules table in this document and get the owner's OK before coding 
 | 2 | Scheme is `javascript` | `ignore` |
 | 3 | Scheme is not `http`/`https` (`mailto:`, `tel:`, …) | `externalBrowser` |
 | 4 | Host is `gemini.google.com` | `mainWebView` (account switching with `?authuser=N`, chat links) |
-| 5 | Host is `accounts.google.com` | `popup` (add account, re-auth) |
-| 6 | `hasExplicitSize` and not `isLinkActivated` | `popup` (script-opened OAuth window) |
+| 5 | Host is `accounts.google.com` | `popup` (add account, re-auth, Google OAuth) |
+| 6 | Not `isLinkActivated`, and either `hasExplicitSize` or the path contains `oauth` or `authorize` | `popup` (a script-opened OAuth window; some OAuth popups are opened without a size) |
 | 7 | Anything else | `externalBrowser` (answer links, citations, store links) |
+
+**`isAccountFlow` rule.** True only when all three hold:
+- the initial URL's host is `accounts.google.com`
+- `hadExplicitSize` is false
+- the path does not contain `oauth`
+
+Why: the account menu's "Add another account" is a plain link without a size, while
+connector sign-ins use OAuth paths such as `/o/oauth2/...` and `/signin/oauth/...`. An
+OAuth popup must never be treated as an account flow: rule 1 below would pull its Gemini
+callback into the main view and break the handshake with the page that opened it.
 
 **`routeInsidePopup` rules.** First match wins.
 
 | # | Condition | Result |
 |---|---|---|
-| 1 | `openedForAccount` and host is `gemini.google.com` | `moveToMain`. The add-account flow finished and returned to Gemini. |
+| 1 | `openedForAccount`, host is `gemini.google.com`, and the path is `/` or starts with `/app` or `/gem` | `moveToMain`. The add-account flow finished and returned to Gemini. |
 | 2 | `startedBlank` and `isFirstNavigation` and not `hadExplicitSize`, host is `accounts.google.com` | `allow` |
 | 3 | `startedBlank` and `isFirstNavigation` and not `hadExplicitSize`, host is `gemini.google.com` | `moveToMain` |
 | 4 | `startedBlank` and `isFirstNavigation` and not `hadExplicitSize`, any other host | `moveToBrowser` (for example Export to Docs) |
@@ -732,13 +737,23 @@ case prints `PASS`/`FAIL`; any failure exits non-zero.
 | `https://accounts.google.com/AddSession?x=y`, link, no size | `popup` |
 | `https://accounts.google.com/o/oauth2/v2/auth?x=y`, script, size | `popup` |
 | `https://github.com/login/oauth/authorize?x=y`, script, size | `popup` |
+| `https://github.com/login/oauth/authorize?x=y`, script, no size | `popup` |
+| `https://example.com/login`, script, no size | `externalBrowser` |
+| `https://example.com/oauth/start`, link, no size | `externalBrowser` (a clicked link is never an OAuth popup) |
 | `https://en.wikipedia.org/wiki/Gemini`, link, no size | `externalBrowser` |
 | `https://docs.google.com/document/d/abc`, script, no size | `externalBrowser` |
 | nil, script, size | `popup` |
 | `about:blank`, script, no size | `popup` |
 | `mailto:someone@example.com`, link, no size | `externalBrowser` |
 | `javascript:void(0)`, link, no size | `ignore` |
+| isAccountFlow: `https://accounts.google.com/AddSession?x=y`, no size | true |
+| isAccountFlow: `https://accounts.google.com/o/oauth2/v2/auth?x=y`, no size | false |
+| isAccountFlow: `https://accounts.google.com/signin/oauth/consent?x=y`, no size | false |
+| isAccountFlow: `https://accounts.google.com/AddSession?x=y`, size | false |
+| isAccountFlow: nil | false |
 | inside popup: account flow → `https://gemini.google.com/app?authuser=1` | `moveToMain` |
+| inside popup: account flow → `https://gemini.google.com/` | `moveToMain` |
+| inside popup: account flow → `https://gemini.google.com/_/callback` | `allow` |
 | inside popup: sized OAuth → `https://gemini.google.com/oauth/callback` | `allow` |
 | inside popup: blank, first nav, no size → `https://docs.google.com/document/d/abc` | `moveToBrowser` |
 | inside popup: blank, first nav, no size → `https://accounts.google.com/x` | `allow` |
@@ -764,9 +779,13 @@ case prints `PASS`/`FAIL`; any failure exits non-zero.
 
 **State.**
 - **Views:** the popup's `WKWebView` and its `NSWindow`.
-- **Routing flags:** `openedForAccount` (initial URL host is `accounts.google.com`),
-  `startedBlank` (initial URL nil or `about:blank`), `hadExplicitSize` (either window
-  feature present), `isFirstNavigation` (starts true).
+- **Routing flags:**
+  - `openedForAccount`: the result of `NewWindowRouter.isAccountFlow` with the initial URL
+    and `hadExplicitSize`
+  - `startedBlank`: the initial URL is nil or `about:blank`
+  - `hadExplicitSize`: either window feature is present
+  - `isFirstNavigation`: starts true. Only http(s) main-frame navigations set it to false;
+    the initial `about:blank` load does not.
 - **Title observer:** the stored key-value observation for the web view's `title`.
 
 **Creating the web view.**
@@ -842,6 +861,9 @@ delegate is not `AppDelegate`.
       - `onClose`: removes the controller from `popups`
 
       Append it to `popups` and return its web view.
+  - Extend the B1 log line with the chosen route.
+- All three closures must capture `self` weakly. `popups` holds the controllers strongly,
+  so a strong capture would create a retain cycle.
 - Rename the method's first parameter label internally if needed, so `webView` (the
   parameter) and `self.webView` (the main view) are never confused.
 - In `isolated deinit` and in the `.browsingDataCleared` handler, close every popup.
@@ -854,12 +876,14 @@ be brought forward instead of the main window.
 **Commit for B2–B4 together.** Subject:
 `feat: open Google sign-in and OAuth popups in an in-app window`. Body must say:
 - the problem: issue #2, and connector OAuth landing in a browser with a different session
-- the routing rules, and that they came from the B1 logs
+- the routing rules, and that they were designed without signed-in logs (the B1 logs
+  exist to correct them)
 - that popups share the main session and use the app's UA
 - Trade-offs:
   - Credentials for Google and third-party sign-in are entered inside the app, as the main
     sign-in already is.
-  - Unknown script-opened windows without a size go to the browser.
+  - Unknown script-opened windows without a size or an OAuth-looking path go to the
+    browser.
 
 **Verification.**
 - The `routertest` harness passes.
@@ -867,6 +891,25 @@ be brought forward instead of the main window.
 - Owner checks B-1 … B-8.
 - After release, with owner approval, close issue #2 with a comment that names the
   release.
+
+---
+
+### Phase B completion
+
+1. Run these and report the results to the coordinator. Do not contact the owner.
+   - B1 is committed, and B2–B4 are committed together.
+   - The Release universal build is clean.
+   - `routertest` passes.
+   - The Phase A harnesses (`dltest2`, `imetest2`) still pass.
+   - The build is in a fresh `-derivedDataPath`.
+2. The coordinator reviews the work and then hands the build to the owner for a single
+   acceptance session:
+   - Appendix B Phase B (B-1 … B-8)
+   - a Phase A smoke check: one upload, one dictation, one download, and one IME candidate
+     pick with an attachment present
+
+   The coordinator reads the `NewWindow` logs from that session.
+3. After the owner approves, follow §R for version `0.4.2`.
 
 ---
 
