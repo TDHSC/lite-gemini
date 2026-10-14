@@ -199,6 +199,7 @@ class SettingsManager: ObservableObject {
         static let customHotKey: CustomHotKey? = CustomHotKey.defaultHotKey
         static let newChatHotKey: CustomHotKey? = CustomHotKey.newChatDefaultHotKey
         static let windowAnimation = true
+        static let defaultTemporaryChat = false
     }
 
     // MARK: - Storage Keys
@@ -213,6 +214,7 @@ class SettingsManager: ObservableObject {
         static let legacyHotKeyPreset = "hotKeyPreset"
         static let language = "appLanguage"
         static let windowAnimation = "windowAnimation"
+        static let defaultTemporaryChat = "defaultTemporaryChat"
     }
 
     // MARK: - Configurable Properties
@@ -292,6 +294,10 @@ class SettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(windowAnimation, forKey: Keys.windowAnimation) }
     }
 
+    /// New chats start as temporary chats
+    @Published var defaultTemporaryChat: Bool {
+        didSet { UserDefaults.standard.set(defaultTemporaryChat, forKey: Keys.defaultTemporaryChat) }
+    }
 
     // MARK: - Computed Properties
 
@@ -372,6 +378,13 @@ class SettingsManager: ObservableObject {
             self.windowAnimation = defaults.bool(forKey: Keys.windowAnimation)
         } else {
             self.windowAnimation = Defaults.windowAnimation
+        }
+
+        // defaultTemporaryChat defaults to false; only read if user has explicitly set it
+        if defaults.object(forKey: Keys.defaultTemporaryChat) != nil {
+            self.defaultTemporaryChat = defaults.bool(forKey: Keys.defaultTemporaryChat)
+        } else {
+            self.defaultTemporaryChat = Defaults.defaultTemporaryChat
         }
     }
 

@@ -72,6 +72,12 @@ struct SettingsView: View {
 
                 Toggle("Window Animation", isOn: $settings.windowAnimation)
 
+                Toggle("New Chats Start as Temporary Chats", isOn: $settings.defaultTemporaryChat)
+
+                Text("Lite Gemini turns on Gemini's temporary chat whenever a new chat opens. If you turn it off in a chat, it stays off until the next new chat.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 HotKeyRecorderView(
                     label: "Show/Hide Window",
                     hotKey: $settings.customHotKey,

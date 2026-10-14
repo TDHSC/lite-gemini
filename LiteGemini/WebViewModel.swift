@@ -192,6 +192,9 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     /// Owns the web view's downloads; kept here because WKDownload's delegate is weak
     let downloadManager = DownloadManager()
 
+    /// Turns on Gemini's temporary chat for new chats when the setting is enabled
+    private var temporaryChatController: TemporaryChatController!
+
     /// Background timeout task; navigates back to homepage on timeout
     private var backgroundTimeoutTask: Task<Void, Never>?
 
@@ -236,6 +239,13 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         )
         configuration.userContentController.addUserScript(imeScript)
 
+        let tempChatIntentScript = WKUserScript(
+            source: TemporaryChatController.intentScriptSource,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        configuration.userContentController.addUserScript(tempChatIntentScript)
+
         webView = GeminiBaseWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
         webView.customUserAgent = settings.userAgent
@@ -246,9 +256,14 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         let weakHandler = WeakScriptMessageHandler(self)
         webView.configuration.userContentController.add(weakHandler, name: "imeEnterFix")
         webView.configuration.userContentController.add(weakHandler, name: "consoleLog")
+        webView.configuration.userContentController.add(weakHandler, name: "temporaryChatIntent")
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
+
+        temporaryChatController = TemporaryChatController(webView: webView) { [weak self] in
+            self?.settings.defaultTemporaryChat ?? false
+        }
 
         // Surface download results as notices in the window
         downloadManager.onNotice = { [weak self] notice in
@@ -260,6 +275,23 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
             .dropFirst()
             .sink { [weak self] userAgent in
                 self?.webView.customUserAgent = userAgent
+            }
+            .store(in: &cancellables)
+
+        webView.publisher(for: \.url)
+            .map { $0?.path }
+            .removeDuplicates()
+            .sink { [weak self] path in
+                guard path == "/app" else { return }
+                self?.temporaryChatController.ensure(reason: "url")
+            }
+            .store(in: &cancellables)
+
+        settings.$defaultTemporaryChat
+            .dropFirst()
+            .sink { [weak self] enabled in
+                guard enabled, let self, self.webView.url?.path == "/app" else { return }
+                self.temporaryChatController.ensure(reason: "setting")
             }
             .store(in: &cancellables)
 
@@ -300,9 +332,11 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         backgroundTimeoutTask?.cancel()
         inputReadyTask?.cancel()
         newChatFallbackTask?.cancel()
+        temporaryChatController.cancel()
         closeAllPopups()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "imeEnterFix")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "consoleLog")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "temporaryChatIntent")
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -381,6 +415,8 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
                 self.webView.load(URLRequest(url: Constants.geminiURL))
             }
         }
+
+        temporaryChatController.ensure(reason: "hotkey")
     }
 
     /// Start the timeout when the app enters background (not started when set to "never")
@@ -453,6 +489,9 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
             isPageReady = true
         }
         stopInputReadyPolling()
+        if webView.url?.path == "/app" {
+            temporaryChatController.ensure(reason: "load")
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -671,6 +710,8 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
                 print("[IME Debug] Native sending synthetic Enter key after 150ms delay")
                 self?.sendEnterKey()
             }
+        case "temporaryChatIntent":
+            temporaryChatController.ensure(reason: "page")
         default:
             break
         }

@@ -241,6 +241,16 @@
         }
       }
     },
+    "Lite Gemini turns on Gemini's temporary chat whenever a new chat opens. If you turn it off in a chat, it stays off until the next new chat." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每次打开新对话时，Lite Gemini 会自动开启 Gemini 的临时会话。在某个对话里手动关闭后，到下一个新对话前都保持关闭。"
+          }
+        }
+      }
+    },
     "General" : {
       "localizations" : {
         "zh-Hans" : {
@@ -318,6 +328,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新建对话"
+          }
+        }
+      }
+    },
+    "New Chats Start as Temporary Chats" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新对话默认使用临时会话"
           }
         }
       }
