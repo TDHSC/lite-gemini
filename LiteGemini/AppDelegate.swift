@@ -29,13 +29,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if flag {
             return true
         } else {
-            // Pick the main window, not any key window: a popup could otherwise be
+            // Show the main window, not any key window: a popup could otherwise be
             // brought forward instead of the main window
-            if let window = sender.windows.first(where: { $0.delegate is AppDelegate }) {
-                window.makeKeyAndOrderFront(nil)
+            if sender.windows.contains(where: { $0.delegate is AppDelegate }) {
+                WindowVisibility.shared.show()
                 return false
             }
             return true
+        }
+    }
+
+    /// Every way back into the app (reopening it, the hotkey, a notification) brings back
+    /// the Dock icon and menu bar that hiding to the background removed
+    func applicationWillBecomeActive(_ notification: Notification) {
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
         }
     }
 

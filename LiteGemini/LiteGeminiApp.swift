@@ -14,6 +14,12 @@ struct LiteGeminiApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
+            // Cmd+Q: quit, or hide to the background when the user keeps the app running.
+            // Replacing the menu item instead of vetoing applicationShouldTerminate keeps
+            // logout, shutdown, Sparkle relaunches and `quit app` requests working.
+            CommandGroup(replacing: .appTermination) {
+                QuitCommand()
+            }
             // Cmd+W: close settings window when focused; hide app when main window is focused
             CommandGroup(replacing: .saveItem) {
                 Button("Close Window") {
@@ -51,6 +57,25 @@ struct LiteGeminiApp: App {
         // Standard macOS settings window, opened with Cmd+,
         Settings {
             SettingsView(updater: appDelegate.updaterController.updater)
+        }
+    }
+}
+
+/// Cmd+Q menu item; observes the setting so the item updates when it changes
+private struct QuitCommand: View {
+    @ObservedObject private var settings = SettingsManager.shared
+
+    var body: some View {
+        if settings.keepRunningInBackground {
+            Button("Hide to Background") {
+                WindowVisibility.shared.hide()
+            }
+            .keyboardShortcut("q", modifiers: .command)
+        } else {
+            Button("Quit Lite Gemini") {
+                NSApp.terminate(nil)
+            }
+            .keyboardShortcut("q", modifiers: .command)
         }
     }
 }

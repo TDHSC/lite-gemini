@@ -191,6 +191,16 @@
         }
       }
     },
+    "Closing the window or pressing ⌘Q hides Lite Gemini and its Dock icon instead of quitting. Open Lite Gemini again or press the show/hide shortcut to bring it back." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭窗口或按 ⌘Q 时，Lite Gemini 会隐藏并移除 Dock 图标，而不是退出。再次打开 Lite Gemini 或按显示/隐藏快捷键即可恢复。"
+          }
+        }
+      }
+    },
     "Done" : {
       "localizations" : {
         "zh-Hans" : {
@@ -267,6 +277,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "前进"
+          }
+        }
+      }
+    },
+    "Hide to Background" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隐藏到后台"
+          }
+        }
+      }
+    },
+    "Keep Running in Background" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在后台保持运行"
           }
         }
       }
@@ -367,6 +397,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按下组合键…"
+          }
+        }
+      }
+    },
+    "Quit Lite Gemini" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出 Lite Gemini"
           }
         }
       }

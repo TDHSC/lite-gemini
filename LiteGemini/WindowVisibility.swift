@@ -1,7 +1,9 @@
 import Cocoa
 
-/// Single show/hide path for the main window, shared by the close button, Cmd+W
-/// and the global hotkeys.
+/// Single show/hide path for the main window, shared by the close button, Cmd+W, Cmd+Q,
+/// the global hotkeys and reopening the app.
+/// With "Keep Running in Background" on, hiding also removes the Dock icon (accessory
+/// activation policy); AppDelegate restores it whenever the app becomes active again.
 class WindowVisibility {
     static let shared = WindowVisibility()
 
@@ -23,6 +25,8 @@ class WindowVisibility {
     func show(completion: (@MainActor () -> Void)? = nil) {
         let useAnimation = SettingsManager.shared.windowAnimation
 
+        // Become a regular app before activating so the menu bar comes back with the window
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
 
         for window in NSApp.windows where window.delegate is AppDelegate {
@@ -59,7 +63,7 @@ class WindowVisibility {
         let windows = NSApp.windows.filter { $0.delegate is AppDelegate && $0.isVisible }
 
         guard SettingsManager.shared.windowAnimation, !windows.isEmpty else {
-            NSApp.hide(nil)
+            finishHiding()
             return
         }
 
@@ -73,7 +77,7 @@ class WindowVisibility {
         }, completionHandler: { [weak self] in
             // AppKit calls the completion handler on the main thread
             MainActor.assumeIsolated {
-                NSApp.hide(nil)
+                self?.finishHiding()
                 // Restore alphaValue for the next show
                 for window in windows {
                     window.alphaValue = 1.0
@@ -81,5 +85,15 @@ class WindowVisibility {
                 self?.isAnimating = false
             }
         })
+    }
+
+    // MARK: - Private Methods
+
+    /// Hide the app, and drop the Dock icon and Cmd+Tab entry when it keeps running in the background
+    private func finishHiding() {
+        NSApp.hide(nil)
+        if SettingsManager.shared.keepRunningInBackground {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 }

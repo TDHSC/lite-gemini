@@ -215,6 +215,7 @@ class SettingsManager: ObservableObject {
         static let language = "appLanguage"
         static let windowAnimation = "windowAnimation"
         static let defaultTemporaryChat = "defaultTemporaryChat"
+        static let keepRunningInBackground = "keepRunningInBackground"
     }
 
     // MARK: - Configurable Properties
@@ -299,6 +300,11 @@ class SettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(defaultTemporaryChat, forKey: Keys.defaultTemporaryChat) }
     }
 
+    /// Closing the window or pressing Cmd+Q hides the app and its Dock icon instead of quitting
+    @Published var keepRunningInBackground: Bool {
+        didSet { UserDefaults.standard.set(keepRunningInBackground, forKey: Keys.keepRunningInBackground) }
+    }
+
     // MARK: - Computed Properties
 
 
@@ -330,6 +336,7 @@ class SettingsManager: ObservableObject {
         }
         self.launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
         self.alwaysOnTop = defaults.bool(forKey: Keys.alwaysOnTop)
+        self.keepRunningInBackground = defaults.bool(forKey: Keys.keepRunningInBackground)
 
         // Read custom hotkey (prefer new format, fallback to legacy preset format)
         if let data = defaults.data(forKey: Keys.customHotKey) {

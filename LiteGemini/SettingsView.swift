@@ -78,7 +78,7 @@ struct SettingsView: View {
                     Label("About", systemImage: "sparkles")
                 }
         }
-        .frame(width: 480, height: 360)
+        .frame(width: 480, height: 380)
         .onAppear {
             // Delay one frame to dismiss auto-focus on appearance
             DispatchQueue.main.async {
@@ -101,6 +101,13 @@ struct SettingsView: View {
                 Toggle("Launch at Login", isOn: $settings.launchAtLogin)
                 Toggle("Always on Top", isOn: $settings.alwaysOnTop)
                 Toggle("Window Animation", isOn: $settings.windowAnimation)
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Keep Running in Background", isOn: $settings.keepRunningInBackground)
+                    Text("Closing the window or pressing ⌘Q hides Lite Gemini and its Dock icon instead of quitting. Open Lite Gemini again or press the show/hide shortcut to bring it back.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Section {
