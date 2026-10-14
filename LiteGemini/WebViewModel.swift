@@ -5,6 +5,8 @@ import Combine
 extension Notification.Name {
     /// Posted after browsing data has been cleared from Settings
     static let browsingDataCleared = Notification.Name("BrowsingDataCleared")
+    /// Posted by the global new-chat hotkey once the window is visible and focused
+    static let newChatRequested = Notification.Name("NewChatRequested")
 }
 
 /// Weak wrapper to avoid retain cycle: WKUserContentController strongly retains message handlers
@@ -194,6 +196,9 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     /// Task that polls for input field readiness via JavaScript
     private var inputReadyTask: Task<Void, Never>?
 
+    /// Fallback task that loads the homepage when the new-chat shortcut had no effect
+    private var newChatFallbackTask: Task<Void, Never>?
+
     /// Check if currently on the Gemini homepage
     private var isOnHomePage: Bool {
         guard let url = webView.url else { return false }
@@ -275,11 +280,20 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
             name: .browsingDataCleared,
             object: nil
         )
+
+        // Listen for the global new-chat hotkey
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleNewChatRequested),
+            name: .newChatRequested,
+            object: nil
+        )
     }
 
     isolated deinit {
         backgroundTimeoutTask?.cancel()
         inputReadyTask?.cancel()
+        newChatFallbackTask?.cancel()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "imeEnterFix")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "consoleLog")
         NotificationCenter.default.removeObserver(self)
@@ -318,6 +332,38 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     /// Reload the homepage after browsing data has been cleared
     @objc private func handleBrowsingDataCleared() {
         webView.load(URLRequest(url: Constants.geminiURL))
+    }
+
+    /// Handle the global new-chat hotkey: send Cmd+Shift+O to the page, and fall back to
+    /// loading /app when the shortcut has no effect (custom non-Mac User-Agent, or a
+    /// Google-side shortcut change)
+    @objc private func handleNewChatRequested() {
+        // No page yet: load Gemini and stop
+        guard let url = webView.url else {
+            webView.load(URLRequest(url: Constants.geminiURL))
+            return
+        }
+
+        // Compare paths only, never full URLs, because query strings change
+        let pathBefore = url.path
+
+        if let window = webView.window {
+            window.makeFirstResponder(webView)
+            sendCmdShiftO(to: window)
+        }
+        // Without a window the shortcut cannot be sent; go straight to the fallback check
+
+        newChatFallbackTask?.cancel()
+        newChatFallbackTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self else { return }
+            // The user is already on a fresh chat; the shortcut legitimately changes nothing
+            guard pathBefore != "/app" else { return }
+            // The URL path is unchanged, so the shortcut had no effect
+            if self.webView.url?.path == pathBefore {
+                self.webView.load(URLRequest(url: Constants.geminiURL))
+            }
+        }
     }
 
     /// Start the timeout when the app enters background (not started when set to "never")
@@ -551,6 +597,27 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         }
         if let cgUp = CGEvent(keyboardEventSource: source, virtualKey: 0x24, keyDown: false) {
             cgUp.flags = []
+            if let nsUp = NSEvent(cgEvent: cgUp) {
+                window.sendEvent(nsUp)
+            }
+        }
+    }
+
+    /// Send Cmd+Shift+O to the given window via CGEvent, the shortcut Gemini maps to "new chat"
+    private func sendCmdShiftO(to window: NSWindow) {
+        guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
+
+        // 0x1F is the O key, matching how sendEnterKey writes 0x24 for Enter
+        let keyCode: CGKeyCode = 0x1F
+
+        if let cgDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true) {
+            cgDown.flags = [.maskCommand, .maskShift]
+            if let nsDown = NSEvent(cgEvent: cgDown) {
+                window.sendEvent(nsDown)
+            }
+        }
+        if let cgUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) {
+            cgUp.flags = [.maskCommand, .maskShift]
             if let nsUp = NSEvent(cgEvent: cgUp) {
                 window.sendEvent(nsUp)
             }

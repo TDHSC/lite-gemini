@@ -167,47 +167,22 @@ class HotKeyManager {
         }
     }
 
-    /// Handle new-chat hotkey: activate window then send Cmd+Shift+O to the web page
+    /// Handle new-chat hotkey: activate the window, then ask WebViewModel for a new chat
     func onNewChatHotKeyPressed() {
         guard !isAnimating else { return }
 
         let hasVisibleWindow = NSApp.windows.contains { $0.isVisible } && NSApp.isActive
 
         if hasVisibleWindow {
-            // Window is already visible, send the key event directly
-            sendCmdShiftO()
+            // Window is already visible, request a new chat directly
+            NotificationCenter.default.post(name: .newChatRequested, object: nil)
         } else {
-            // Activate and show window first, then send the key event
+            // Activate and show window first, then request a new chat
             showWithAnimation {
                 // Delay slightly to ensure the window and WebView are fully ready
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    self.sendCmdShiftO()
+                    NotificationCenter.default.post(name: .newChatRequested, object: nil)
                 }
-            }
-        }
-    }
-
-    /// Send Cmd+Shift+O key event to the key window via CGEvent
-    private func sendCmdShiftO() {
-        guard let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible && $0.canBecomeKey }) else { return }
-        guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
-
-        // kVK_ANSI_O = 0x1F
-        let keyCode: CGKeyCode = CGKeyCode(kVK_ANSI_O)
-
-        // keyDown with Cmd+Shift
-        if let cgDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true) {
-            cgDown.flags = [.maskCommand, .maskShift]
-            if let nsDown = NSEvent(cgEvent: cgDown) {
-                window.sendEvent(nsDown)
-            }
-        }
-
-        // keyUp
-        if let cgUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false) {
-            cgUp.flags = [.maskCommand, .maskShift]
-            if let nsUp = NSEvent(cgEvent: cgUp) {
-                window.sendEvent(nsUp)
             }
         }
     }
