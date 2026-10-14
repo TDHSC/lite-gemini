@@ -21,7 +21,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if flag {
             return true
         } else {
-            if let window = sender.windows.first(where: { $0.canBecomeKey }) {
+            // Pick the main window, not any key window: a popup could otherwise be
+            // brought forward instead of the main window
+            if let window = sender.windows.first(where: { $0.delegate is AppDelegate }) {
                 window.makeKeyAndOrderFront(nil)
                 return false
             }

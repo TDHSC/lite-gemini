@@ -201,6 +201,10 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     /// Fallback task that loads the homepage when the new-chat shortcut had no effect
     private var newChatFallbackTask: Task<Void, Never>?
 
+    /// Open popup windows owned by this view model (sign-in, OAuth); they remove
+    /// themselves through `onClose`
+    private var popups: [PopupWindowController] = []
+
     /// Check if currently on the Gemini homepage
     private var isOnHomePage: Bool {
         guard let url = webView.url else { return false }
@@ -296,6 +300,7 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         backgroundTimeoutTask?.cancel()
         inputReadyTask?.cancel()
         newChatFallbackTask?.cancel()
+        closeAllPopups()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "imeEnterFix")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "consoleLog")
         NotificationCenter.default.removeObserver(self)
@@ -333,7 +338,17 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
     /// Reload the homepage after browsing data has been cleared
     @objc private func handleBrowsingDataCleared() {
+        closeAllPopups()
         webView.load(URLRequest(url: Constants.geminiURL))
+    }
+
+    /// Close every popup window; the array is copied first because closing mutates it
+    /// through `onClose`
+    private func closeAllPopups() {
+        let controllers = popups
+        for controller in controllers {
+            controller.close()
+        }
     }
 
     /// Handle the global new-chat hotkey: send Cmd+Shift+O to the page, and fall back to
@@ -509,14 +524,21 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
     // MARK: - WKUIDelegate
 
-    /// Handle target="_blank" link requests by opening them in the system default browser
+    /// Route a new-window request: Gemini URLs load in the main view, Google sign-in and
+    /// OAuth open in an in-app popup, everything else goes to the default browser.
+    /// The `webView` parameter is the requesting view and may be a popup's web view in
+    /// nested calls; all main-view loads go to `self.webView`.
     func webView(_ webView: WKWebView,
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
-        // Record the request for popup-routing diagnosis. `.notice` because lower levels
-        // are not persisted and the logs are read after the session.
         let targetURL = navigationAction.request.url
+        let isLinkActivated = navigationAction.navigationType == .linkActivated
+        let hasExplicitSize = windowFeatures.width != nil || windowFeatures.height != nil
+        let route = NewWindowRouter.route(url: targetURL, isLinkActivated: isLinkActivated, hasExplicitSize: hasExplicitSize)
+
+        // One `.notice` entry shows both the request and the decision; lower levels are
+        // not persisted, and the logs are read after the session.
         Self.newWindowLogger.notice("""
         new-window: scheme=\(targetURL?.scheme ?? "nil", privacy: .public) \
         host=\(targetURL?.host ?? "nil", privacy: .public) \
@@ -524,12 +546,49 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         type=\(Self.navigationTypeName(navigationAction.navigationType), privacy: .public) \
         size=\(Self.windowSizeDescription(windowFeatures), privacy: .public) \
         source=\(navigationAction.sourceFrame.securityOrigin.host, privacy: .public) \
-        mainFrame=\(navigationAction.sourceFrame.isMainFrame, privacy: .public)
+        mainFrame=\(navigationAction.sourceFrame.isMainFrame, privacy: .public) \
+        route=\(Self.routeName(route), privacy: .public)
         """)
-        if let url = navigationAction.request.url {
+
+        switch route {
+        case .mainWebView(let url):
+            self.webView.load(URLRequest(url: url))
+            return nil
+        case .externalBrowser(let url):
             NSWorkspace.shared.open(url)
+            return nil
+        case .ignore:
+            return nil
+        case .popup:
+            let controller = PopupWindowController(
+                configuration: configuration,
+                navigationAction: navigationAction,
+                windowFeatures: windowFeatures,
+                parentWindow: self.webView.window,
+                openInMain: { [weak self] url in
+                    self?.webView.load(URLRequest(url: url))
+                },
+                routeNewWindow: { [weak self] configuration, navigationAction, windowFeatures in
+                    guard let self else { return nil }
+                    return self.webView(self.webView, createWebViewWith: configuration, for: navigationAction, windowFeatures: windowFeatures)
+                },
+                onClose: { [weak self] controller in
+                    self?.popups.removeAll { $0 === controller }
+                }
+            )
+            popups.append(controller)
+            return controller.webView
         }
-        return nil
+    }
+
+    /// A readable name for the chosen route, for the new-window log
+    private static func routeName(_ route: NewWindowRoute) -> String {
+        switch route {
+        case .mainWebView: return "mainWebView"
+        case .popup: return "popup"
+        case .externalBrowser: return "externalBrowser"
+        case .ignore: return "ignore"
+        }
     }
 
     /// A readable name for a WKNavigationType, for the new-window log
