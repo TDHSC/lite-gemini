@@ -44,12 +44,14 @@ final class DownloadManager: NSObject, WKDownloadDelegate {
         navigationAction.shouldPerformDownload ? .download : .allow
     }
 
-    /// Policy for a navigation response: download when the response cannot be shown or when the
-    /// server marks it as an attachment; everything else is allowed as before.
-    /// Takes plain values instead of a `WKNavigationResponse` so the header logic is
+    /// Policy for a navigation response: download when a main-frame response cannot be
+    /// shown (unshowable subframe content — ads, widgets — must not silently land in
+    /// ~/Downloads), or when the server marks the response as an attachment in any frame;
+    /// everything else is allowed as before.
+    /// Takes plain values instead of a `WKNavigationResponse` so the logic is
     /// testable with hand-built `HTTPURLResponse` objects.
-    static func downloadPolicy(for response: URLResponse, canShowMIMEType: Bool) -> WKNavigationResponsePolicy {
-        if !canShowMIMEType {
+    static func downloadPolicy(for response: URLResponse, canShowMIMEType: Bool, isForMainFrame: Bool) -> WKNavigationResponsePolicy {
+        if !canShowMIMEType && isForMainFrame {
             return .download
         }
         if let httpURLResponse = response as? HTTPURLResponse {

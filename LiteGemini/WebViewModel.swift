@@ -404,7 +404,8 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
                  decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
         decisionHandler(DownloadManager.downloadPolicy(
             for: navigationResponse.response,
-            canShowMIMEType: navigationResponse.canShowMIMEType
+            canShowMIMEType: navigationResponse.canShowMIMEType,
+            isForMainFrame: navigationResponse.isForMainFrame
         ))
     }
 
