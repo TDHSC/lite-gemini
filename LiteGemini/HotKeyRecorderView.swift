@@ -1,58 +1,129 @@
 import SwiftUI
 import Carbon
 
-/// Reusable hotkey recorder view — allows the user to freely record any modifier + key combination
-/// Used for both the show/hide window hotkey and the new-chat hotkey
+/// Sleek capsule hotkey recorder with individual keycap badges (Raycast / CleanShot style).
+/// Click the capsule to record a new shortcut; includes compact inline clear and reset actions.
 struct HotKeyRecorderView: View {
     let label: String
     @Binding var hotKey: CustomHotKey?
     let defaultHotKey: CustomHotKey
 
     @State private var isRecording = false
+    @State private var isHovering = false
     @State private var eventMonitor: Any?
 
+    /// Discrete keycap tokens for the current hotkey (e.g. ["⌘", "⇧", "N"])
+    private var keyTokens: [String] {
+        guard let hk = hotKey else { return [] }
+        var tokens: [String] = []
+        if hk.modifiers & UInt32(controlKey) != 0 { tokens.append("⌃") }
+        if hk.modifiers & UInt32(optionKey) != 0  { tokens.append("⌥") }
+        if hk.modifiers & UInt32(shiftKey) != 0   { tokens.append("⇧") }
+        if hk.modifiers & UInt32(cmdKey) != 0     { tokens.append("⌘") }
+        tokens.append(CustomHotKey.keyName(for: hk.keyCode))
+        return tokens
+    }
+
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             Text(LocalizedStringKey(label))
 
             Spacer()
 
-            // Current hotkey / recording prompt
-            Text(isRecording
-                 ? String(localized: "Press a key combination…")
-                 : (hotKey?.displayName ?? String(localized: "None")))
-                .foregroundStyle(isRecording ? .orange : (hotKey == nil ? .secondary : .primary))
-                .fontWeight(.medium)
-                .frame(minWidth: 100, alignment: .trailing)
-
-            if isRecording {
-                Button(String(localized: "Stop")) {
-                    stopRecording()
+            // Reset button (only visible when modified from default and not recording)
+            if !isRecording && hotKey != defaultHotKey {
+                Button {
+                    hotKey = defaultHotKey
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .background(
+                            Circle()
+                                .fill(Color.primary.opacity(0.06))
+                        )
                 }
-                .controlSize(.small)
-            } else {
-                Button(String(localized: "Record")) {
-                    startRecording()
-                }
-                .controlSize(.small)
+                .buttonStyle(.plain)
+                .help(String(localized: "Reset to Default"))
             }
 
-            if !isRecording {
-                // Show "Clear" button when a hotkey is set
-                if hotKey != nil {
-                    Button(String(localized: "Clear")) {
-                        hotKey = nil
+            // Interactive recorder pill
+            HStack(spacing: 5) {
+                if isRecording {
+                    Circle()
+                        .fill(Color.primary.opacity(0.75))
+                        .frame(width: 5, height: 5)
+                    Text(String(localized: "Press a key combination…"))
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 2)
+                } else if !keyTokens.isEmpty {
+                    HStack(spacing: 3) {
+                        ForEach(Array(keyTokens.enumerated()), id: \.offset) { _, token in
+                            Text(token)
+                                .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                                .foregroundStyle(.primary.opacity(0.88))
+                                .frame(minWidth: 19, minHeight: 19)
+                                .padding(.horizontal, token.count > 1 ? 5 : 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                                        .fill(Color.primary.opacity(0.08))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                                )
+                        }
                     }
-                    .controlSize(.small)
-                }
 
-                // Show "Reset to Default" when value differs from default (including cleared state)
-                if hotKey != defaultHotKey {
-                    Button(String(localized: "Reset to Default")) {
-                        hotKey = defaultHotKey
+                    // Inline clear button
+                    Button {
+                        hotKey = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8.5, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16, height: 16)
+                            .background(
+                                Circle()
+                                    .fill(Color.primary.opacity(0.06))
+                            )
                     }
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
+                    .padding(.leading, 2)
+                    .help(String(localized: "Clear"))
+                } else {
+                    Text(String(localized: "Record"))
+                        .font(.system(size: 11.5, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
                 }
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .frame(minHeight: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.primary.opacity(isRecording ? 0.09 : (isHovering ? 0.06 : 0.035)))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(
+                        Color.primary.opacity(isRecording ? 0.45 : (isHovering ? 0.22 : 0.12)),
+                        lineWidth: isRecording ? 1.2 : 0.8
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .onTapGesture {
+                if isRecording {
+                    stopRecording()
+                } else {
+                    startRecording()
+                }
+            }
+            .onHover { hovering in
+                isHovering = hovering
             }
         }
         .onDisappear {

@@ -13,7 +13,6 @@ struct LiteGeminiApp: App {
             ContentView(viewModel: webViewModel)
         }
         .windowStyle(.hiddenTitleBar)
-        .windowToolbarStyle(.unified)
         .commands {
             // Cmd+W: close settings window when focused; hide app when main window is focused
             CommandGroup(replacing: .saveItem) {

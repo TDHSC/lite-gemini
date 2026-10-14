@@ -42,8 +42,6 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     /// Subscriptions for observing settings changes
     private var cancellables = Set<AnyCancellable>()
 
-    /// IME fix script — injected at document start to register before any page scripts.
-    /// Tracks real composing state and blocks buggy Enter events from reaching the page.
     /// Console log bridge — forwards JS console.log to native Xcode console
     private static let consoleLogBridgeScript = """
     (function() {
@@ -63,6 +61,45 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     })();
     """
 
+    /// Observes the Gemini page's computed background color so the native titlebar and
+    /// window backdrop blend seamlessly in both dark (#131314) and light (#FFFFFF) themes.
+    private static let themeSyncScript = """
+    (function() {
+        if (window.__themeSyncInstalled) return;
+        window.__themeSyncInstalled = true;
+        var lastColor = '';
+        function reportBg() {
+            var body = document.body;
+            var docEl = document.documentElement;
+            if (!body && !docEl) return;
+            var bg = body ? window.getComputedStyle(body).backgroundColor : '';
+            if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') {
+                bg = docEl ? window.getComputedStyle(docEl).backgroundColor : '';
+            }
+            if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg !== lastColor) {
+                lastColor = bg;
+                try {
+                    window.webkit.messageHandlers.themeColor.postMessage(bg);
+                } catch(e) {}
+            }
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+            reportBg();
+            var observer = new MutationObserver(reportBg);
+            if (document.documentElement) {
+                observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+            }
+            if (document.body) {
+                observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+            }
+        });
+        window.addEventListener('load', reportBg);
+        setInterval(reportBg, 1500);
+    })();
+    """
+
+    /// IME fix script — injected at document start to register before any page scripts.
+    /// Tracks real composing state and blocks buggy Enter events from reaching the page.
     private static let imeFixScript = """
     (function() {
         if (window.__imeFixInstalled) return;
@@ -186,6 +223,8 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     @Published var isPageReady: Bool = false
     /// Latest download notice to show in the window; nil when hidden
     @Published var downloadNotice: DownloadNotice?
+    /// Synced background color of the Gemini web page for seamless titlebar & backdrop blending
+    @Published var pageBackgroundColor: Color = Color(nsColor: AppDelegate.geminiSurfaceNSColor)
 
     let webView: WKWebView
 
@@ -246,9 +285,18 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         )
         configuration.userContentController.addUserScript(tempChatIntentScript)
 
+        let themeScript = WKUserScript(
+            source: Self.themeSyncScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        configuration.userContentController.addUserScript(themeScript)
+
         webView = GeminiBaseWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
         webView.customUserAgent = settings.userAgent
+        webView.underPageBackgroundColor = AppDelegate.geminiSurfaceNSColor
+        webView.setValue(false, forKey: "drawsBackground")
 
         super.init()
 
@@ -257,6 +305,7 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         webView.configuration.userContentController.add(weakHandler, name: "imeEnterFix")
         webView.configuration.userContentController.add(weakHandler, name: "consoleLog")
         webView.configuration.userContentController.add(weakHandler, name: "temporaryChatIntent")
+        webView.configuration.userContentController.add(weakHandler, name: "themeColor")
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -340,6 +389,7 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "imeEnterFix")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "consoleLog")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "temporaryChatIntent")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "themeColor")
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -697,7 +747,7 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         }
     }
 
-    // MARK: - WKScriptMessageHandler (IME Enter Fix)
+    // MARK: - WKScriptMessageHandler (IME Enter Fix & Theme Sync)
 
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
@@ -715,9 +765,28 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
             }
         case "temporaryChatIntent":
             temporaryChatController.ensure(reason: "page")
+        case "themeColor":
+            if let cssColor = message.body as? String,
+               let parsedColor = Self.parseCSSColor(cssColor) {
+                pageBackgroundColor = Color(nsColor: parsedColor)
+                webView.underPageBackgroundColor = parsedColor
+                webView.window?.backgroundColor = parsedColor
+            }
         default:
             break
         }
+    }
+
+    /// Parse a CSS `rgb(r, g, b)` or `rgba(r, g, b, a)` string into an `NSColor`
+    private static func parseCSSColor(_ css: String) -> NSColor? {
+        let numbers = css
+            .components(separatedBy: CharacterSet(charactersIn: "0123456789.").inverted)
+            .compactMap { Double($0) }
+        guard numbers.count >= 3 else { return nil }
+        let r = min(max(numbers[0] / 255.0, 0), 1)
+        let g = min(max(numbers[1] / 255.0, 0), 1)
+        let b = min(max(numbers[2] / 255.0, 0), 1)
+        return NSColor(srgbRed: r, green: g, blue: b, alpha: 1.0)
     }
 
     /// Send a fresh Enter key event via CGEvent.

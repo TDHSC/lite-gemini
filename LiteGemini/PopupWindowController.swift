@@ -61,6 +61,8 @@ final class PopupWindowController: NSObject, NSWindowDelegate, WKNavigationDeleg
         startedBlank = NewWindowRouter.isBlankURL(initialURL)
 
         webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.underPageBackgroundColor = AppDelegate.geminiSurfaceNSColor
+        webView.setValue(false, forKey: "drawsBackground")
 
         // Window size from the opener's features, clamped; the default fits a sign-in form
         let width = Self.clamped(windowFeatures.width?.intValue, default: 520, range: 400...1000)
@@ -73,6 +75,9 @@ final class PopupWindowController: NSObject, NSWindowDelegate, WKNavigationDeleg
             defer: false
         )
         window.isReleasedWhenClosed = false
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.backgroundColor = parentWindow?.backgroundColor ?? AppDelegate.geminiSurfaceNSColor
         window.title = initialURL?.host ?? ""
         // With "Always on top" on, a normal-level popup would open behind the main window
         window.level = parentWindow?.level ?? .normal

@@ -7,122 +7,112 @@
 
 import SwiftUI
 
-/// Branded splash screen displayed during initial page load.
-/// Shows the app icon, title, and an animated progress bar with a shimmer effect.
+/// Minimalist monochrome splash screen displayed during initial page load.
+/// Uses a restrained geometric mark with a calm breathing pulse on the exact Gemini surface color.
 struct SplashView: View {
 
     /// Whether the content is still loading
     var isLoading: Bool
 
-    /// Controls the fade-out / scale transition when loading completes
+    /// Surface color synced with the Gemini page backdrop
+    var backgroundColor: Color = Color(nsColor: AppDelegate.geminiSurfaceNSColor)
+
+    /// Controls the fade-out transition when loading completes
     @State private var isVisible: Bool = true
 
-    /// Drives the infinite shimmer animation on the progress bar
-    @State private var shimmerOffset: CGFloat = -1.0
-
-    // MARK: - Constants
-
-    private enum Layout {
-        static let iconSize: CGFloat = 96
-        static let iconCornerRadius: CGFloat = 22
-        static let barWidth: CGFloat = 200
-        static let barHeight: CGFloat = 4
-        static let barCornerRadius: CGFloat = 2
-    }
-
-    // MARK: - Gradient
-
-    /// Brand gradient inspired by Gemini's blue-to-purple palette
-    private var brandGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.35, green: 0.50, blue: 0.98),   // Blue
-                Color(red: 0.58, green: 0.40, blue: 0.98),   // Purple
-                Color(red: 0.82, green: 0.35, blue: 0.85)    // Pink
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
+    /// Drives the calm breathing pulse animation
+    @State private var isBreathing: Bool = false
 
     // MARK: - Body
 
     var body: some View {
         ZStack {
-            // Semi-transparent backdrop
-            Color(NSColor.windowBackgroundColor)
+            backgroundColor
                 .ignoresSafeArea()
 
-            VStack(spacing: 20) {
-                // App icon
-                appIcon
+            ZStack {
+                // Subtle outer hairline halo
+                Circle()
+                    .strokeBorder(
+                        Color.primary.opacity(isBreathing ? 0.12 : 0.04),
+                        lineWidth: 1
+                    )
+                    .frame(width: 56, height: 56)
+                    .scaleEffect(isBreathing ? 1.06 : 0.94)
 
-                // App title with gradient
-                Text("Lite Gemini")
-                    .font(.system(size: 24, weight: .semibold, design: .rounded))
-                    .foregroundStyle(brandGradient)
-
-                // Animated progress bar
-                progressBar
-                    .padding(.top, 8)
+                // Crisp monochrome four-point geometric star mark
+                MonochromeSparkShape()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.primary.opacity(0.88),
+                                Color.primary.opacity(0.42)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 24, height: 24)
+                    .opacity(isBreathing ? 0.85 : 0.30)
+                    .scaleEffect(isBreathing ? 1.02 : 0.94)
             }
         }
         .opacity(isVisible ? 1 : 0)
-        .scaleEffect(isVisible ? 1 : 0.95)
+        .scaleEffect(isVisible ? 1 : 0.98)
         .onChange(of: isLoading) { _, newValue in
             if !newValue {
-                withAnimation(.easeOut(duration: 0.4)) {
+                withAnimation(.easeOut(duration: 0.35)) {
                     isVisible = false
                 }
             }
         }
         .allowsHitTesting(isVisible)
         .onAppear {
-            startShimmerAnimation()
-        }
-    }
-
-    // MARK: - Subviews
-
-    /// App icon loaded from the system application icon
-    private var appIcon: some View {
-        Group {
-            if let nsImage = NSApp.applicationIconImage {
-                Image(nsImage: nsImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: Layout.iconSize, height: Layout.iconSize)
-                    .clipShape(RoundedRectangle(cornerRadius: Layout.iconCornerRadius, style: .continuous))
-                    .shadow(color: .black.opacity(0.15), radius: 12, x: 0, y: 4)
+            withAnimation(
+                .easeInOut(duration: 1.6)
+                .repeatForever(autoreverses: true)
+            ) {
+                isBreathing = true
             }
         }
     }
+}
 
-    /// Custom capsule-shaped progress bar with a shimmer animation
-    private var progressBar: some View {
-        RoundedRectangle(cornerRadius: Layout.barCornerRadius)
-            .fill(Color.primary.opacity(0.08))
-            .frame(width: Layout.barWidth, height: Layout.barHeight)
-            .overlay(alignment: .leading) {
-                RoundedRectangle(cornerRadius: Layout.barCornerRadius)
-                    .fill(brandGradient)
-                    .frame(width: Layout.barWidth * 0.4, height: Layout.barHeight)
-                    .offset(x: shimmerOffset * (Layout.barWidth * 0.6))
-            }
-            .clipShape(RoundedRectangle(cornerRadius: Layout.barCornerRadius))
-    }
+/// Pure vector four-point concave star shape
+struct MonochromeSparkShape: Shape {
+    nonisolated func path(in rect: CGRect) -> Path {
+        let w = rect.width
+        let h = rect.height
+        let cx = rect.midX
+        let cy = rect.midY
+        // Control point offset from center determines the concavity of the star arms
+        let k: CGFloat = min(w, h) * 0.08
 
-    // MARK: - Animation
-
-    /// Start the infinite left-to-right shimmer loop
-    private func startShimmerAnimation() {
-        shimmerOffset = -0.2
-        withAnimation(
-            .easeInOut(duration: 1.2)
-            .repeatForever(autoreverses: true)
-        ) {
-            shimmerOffset = 1.0
-        }
+        var path = Path()
+        // Top tip
+        path.move(to: CGPoint(x: cx, y: rect.minY))
+        // Curve to right tip
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: cy),
+            control: CGPoint(x: cx + k, y: cy - k)
+        )
+        // Curve to bottom tip
+        path.addQuadCurve(
+            to: CGPoint(x: cx, y: rect.maxY),
+            control: CGPoint(x: cx + k, y: cy + k)
+        )
+        // Curve to left tip
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX, y: cy),
+            control: CGPoint(x: cx - k, y: cy + k)
+        )
+        // Curve back to top tip
+        path.addQuadCurve(
+            to: CGPoint(x: cx, y: rect.minY),
+            control: CGPoint(x: cx - k, y: cy - k)
+        )
+        path.closeSubpath()
+        return path
     }
 }
 

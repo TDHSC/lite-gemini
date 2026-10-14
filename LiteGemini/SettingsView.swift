@@ -34,7 +34,7 @@ final class CheckForUpdatesViewModel: ObservableObject {
     }
 }
 
-/// Settings view, displayed using the native macOS Settings Scene
+/// Settings view organized into clean macOS toolbar tabs (General, Shortcuts, Advanced, About)
 struct SettingsView: View {
     @ObservedObject private var settings = SettingsManager.shared
     @FocusState private var isUAFieldFocused: Bool
@@ -57,39 +57,69 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        TabView {
+            generalTab
+                .tabItem {
+                    Label("General", systemImage: "gearshape")
+                }
+
+            shortcutsTab
+                .tabItem {
+                    Label("Shortcuts", systemImage: "command")
+                }
+
+            advancedTab
+                .tabItem {
+                    Label("Advanced", systemImage: "slider.horizontal.3")
+                }
+
+            aboutTab
+                .tabItem {
+                    Label("About", systemImage: "sparkles")
+                }
+        }
+        .frame(width: 480, height: 360)
+        .onAppear {
+            // Delay one frame to dismiss auto-focus on appearance
+            DispatchQueue.main.async {
+                isUAFieldFocused = false
+                NSApp.keyWindow?.makeFirstResponder(nil)
+
+                // If always-on-top is enabled, elevate the settings window to floating level
+                if settings.alwaysOnTop, let settingsWindow = NSApp.keyWindow {
+                    settingsWindow.level = .floating
+                }
+            }
+        }
+    }
+
+    // MARK: - General Tab
+
+    private var generalTab: some View {
         Form {
-            // MARK: - General Settings
-            Section("General") {
+            Section {
+                Toggle("Launch at Login", isOn: $settings.launchAtLogin)
+                Toggle("Always on Top", isOn: $settings.alwaysOnTop)
+                Toggle("Window Animation", isOn: $settings.windowAnimation)
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("New Chats Start as Temporary Chats", isOn: $settings.defaultTemporaryChat)
+                    Text("Lite Gemini turns on Gemini's temporary chat whenever a new chat opens. If you turn it off in a chat, it stays off until the next new chat.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Picker("Background Timeout", selection: $settings.backgroundTimeout) {
                     ForEach(BackgroundTimeoutPreset.allCases) { preset in
                         Text(preset.displayName).tag(preset)
                     }
                 }
+            }
 
-                Toggle("Launch at Login", isOn: $settings.launchAtLogin)
-
-                Toggle("Always on Top", isOn: $settings.alwaysOnTop)
-
-                Toggle("Window Animation", isOn: $settings.windowAnimation)
-
-                Toggle("New Chats Start as Temporary Chats", isOn: $settings.defaultTemporaryChat)
-
-                Text("Lite Gemini turns on Gemini's temporary chat whenever a new chat opens. If you turn it off in a chat, it stays off until the next new chat.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                HotKeyRecorderView(
-                    label: "Show/Hide Window",
-                    hotKey: $settings.customHotKey,
-                    defaultHotKey: .defaultHotKey
-                )
-
-                HotKeyRecorderView(
-                    label: "New Chat",
-                    hotKey: $settings.newChatHotKey,
-                    defaultHotKey: .newChatDefaultHotKey
-                )
-
+            Section {
                 Picker("Language", selection: $settings.language) {
                     ForEach(AppLanguage.allCases) { lang in
                         Text(lang.displayName).tag(lang)
@@ -104,25 +134,60 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
-
-                // Auto check for updates toggle, bound directly to Sparkle's automaticallyChecksForUpdates
-                Toggle("Auto Check for Updates", isOn: Binding(
-                    get: { updater.automaticallyChecksForUpdates },
-                    set: { updater.automaticallyChecksForUpdates = $0 }
-                ))
             }
+        }
+        .formStyle(.grouped)
+    }
 
-            // MARK: - Advanced Settings
-            Section("Advanced") {
+    // MARK: - Shortcuts Tab
+
+    private var shortcutsTab: some View {
+        Form {
+            Section {
+                HotKeyRecorderView(
+                    label: "Show/Hide Window",
+                    hotKey: $settings.customHotKey,
+                    defaultHotKey: .defaultHotKey
+                )
+
+                HotKeyRecorderView(
+                    label: "New Chat",
+                    hotKey: $settings.newChatHotKey,
+                    defaultHotKey: .newChatDefaultHotKey
+                )
+            } footer: {
+                Text("Click a shortcut capsule to record a new key combination, or press Esc to cancel.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    // MARK: - Advanced Tab
+
+    private var advancedTab: some View {
+        Form {
+            Section {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("User-Agent")
+                            .fontWeight(.medium)
                         Spacer()
+                        if isCustomUA {
+                            Button("Reset to Default") {
+                                settings.userAgent = settings.defaultUserAgent
+                            }
+                            .font(.caption)
+                            .buttonStyle(.borderless)
+                        }
                         if isEditingUA {
                             Button("Done") {
                                 isEditingUA = false
                             }
                             .font(.caption)
+                            .fontWeight(.medium)
+                            .buttonStyle(.borderless)
                         } else {
                             Button("Edit") {
                                 isEditingUA = true
@@ -131,42 +196,51 @@ struct SettingsView: View {
                                 }
                             }
                             .font(.caption)
-                        }
-                        if isCustomUA {
-                            Button("Reset to Default") {
-                                settings.userAgent = settings.defaultUserAgent
-                            }
-                            .font(.caption)
+                            .buttonStyle(.borderless)
                         }
                     }
+
                     if isEditingUA {
                         TextEditor(text: $settings.userAgent)
-                            .font(.system(.caption, design: .monospaced))
-                            .frame(height: 60)
-                            .border(Color.secondary.opacity(0.3), width: 1)
+                            .font(.system(size: 11, design: .monospaced))
+                            .frame(height: 64)
+                            .padding(6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.primary.opacity(0.04))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.18), lineWidth: 1)
+                            )
                             .focused($isUAFieldFocused)
+
                         Text("Changes take effect after refreshing (Cmd+R)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
                         Text(settings.userAgent)
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
+                            .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.primary.opacity(0.03))
+                            )
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 isEditingUA = true
-                                // Delay focus to the input field
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                     isUAFieldFocused = true
                                 }
                             }
                     }
                 }
+            }
 
-                // MARK: - Clear Browsing Data
-
+            Section {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Clear Browsing Data")
@@ -178,7 +252,7 @@ struct SettingsView: View {
                     if showClearDataSuccess {
                         Label("Cleared", systemImage: "checkmark.circle.fill")
                             .font(.caption)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(.secondary)
                             .transition(.opacity)
                     }
                     Button(role: .destructive) {
@@ -201,40 +275,60 @@ struct SettingsView: View {
                     Text("This will remove cookies, cache and local storage. You will need to sign in again.")
                 }
             }
+        }
+        .formStyle(.grouped)
+    }
 
-            // MARK: - About
-            Section("About") {
-                HStack {
-                    Text("Version")
+    // MARK: - About Tab
+
+    private var aboutTab: some View {
+        Form {
+            Section {
+                HStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.primary.opacity(0.06))
+                            .frame(width: 48, height: 48)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.8)
+                            )
+
+                        MonochromeSparkShape()
+                            .fill(Color.primary.opacity(0.82))
+                            .frame(width: 20, height: 20)
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Lite Gemini")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Version \(appVersion)")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+
                     Spacer()
-                    Text(appVersion)
-                        .foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 4)
+            }
+
+            Section {
+                Toggle("Auto Check for Updates", isOn: Binding(
+                    get: { updater.automaticallyChecksForUpdates },
+                    set: { updater.automaticallyChecksForUpdates = $0 }
+                ))
 
                 HStack {
                     Text("Check for Updates")
                     Spacer()
                     CheckForUpdatesView(updater: updater)
-                        .buttonStyle(.borderless)
                 }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 450, height: 480)
-        .onAppear {
-            // Delay one frame to dismiss auto-focus on appearance
-            DispatchQueue.main.async {
-                isUAFieldFocused = false
-                // Move focus away from TextField to the window itself
-                NSApp.keyWindow?.makeFirstResponder(nil)
-
-                // If always-on-top is enabled, elevate the settings window to floating level
-                if settings.alwaysOnTop, let settingsWindow = NSApp.keyWindow {
-                    settingsWindow.level = .floating
-                }
-            }
-        }
     }
+
+    // MARK: - Helpers
 
     /// Read version number from Bundle
     private var appVersion: String {
