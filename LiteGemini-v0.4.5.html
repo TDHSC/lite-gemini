@@ -1,0 +1,12 @@
+<html><body><h2>New</h2>
+<ul>
+<li>The main window can now be made much smaller. The minimum size dropped from 800×600 to about 360 wide, roughly phone width, so Lite Gemini fits as a narrow side window, especially with <strong>Always on Top</strong> on (Settings → General). At narrow widths Gemini switches to its compact layout. New installs still open at 800×600, and existing windows keep their current size.</li>
+</ul>
+<h2>Notes</h2>
+<ul>
+<li>The app is not notarized, so macOS blocks it on first launch. Open <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>, or run:
+<div class="highlight highlight-source-shell"><pre class="notranslate">xattr -dr com.apple.quarantine <span class="pl-s"><span class="pl-pds">"</span>/Applications/Lite Gemini.app<span class="pl-pds">"</span></span></pre></div>
+</li>
+<li>After updating, macOS may ask for microphone permission again. This is expected with the current signing setup; grant it once per update.</li>
+</ul>
+<p><strong>Full Changelog</strong>: <a class="commit-link" href="https://github.com/TDHSC/lite-gemini/compare/v0.4.4...v0.4.5">TDHSC/lite-gemini@<tt>v0.4.4...v0.4.5</tt></a></p></body></html>

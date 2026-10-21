@@ -1,0 +1,36 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Lite Gemini</title>
+        <item>
+            <title>0.4.5</title>
+            <pubDate>Wed, 21 Oct 2026 23:45:02 +0000</pubDate>
+            <link>https://github.com/TDHSC/lite-gemini/releases/tag/v0.4.5</link>
+            <sparkle:version>12</sparkle:version>
+            <sparkle:shortVersionString>0.4.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://tdhsc.github.io/lite-gemini/LiteGemini-v0.4.5.html</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/TDHSC/lite-gemini/releases/download/v0.4.5/LiteGemini-v0.4.5.dmg" length="3701495" type="application/octet-stream" sparkle:edSignature="TXWv1ILhyZ1YzdCCvCcbktUoDM10ZuV6333yrgKAeqANLc0Z/MWsXsMsta5q6fwcRKcuHUjFIQpHPjhyGwYZDw=="/>
+        </item>
+        <item>
+            <title>0.4.4</title>
+            <pubDate>Wed, 14 Oct 2026 04:27:43 +0000</pubDate>
+            <link>https://github.com/TDHSC/lite-gemini/releases/tag/v0.4.4</link>
+            <sparkle:version>11</sparkle:version>
+            <sparkle:shortVersionString>0.4.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://tdhsc.github.io/lite-gemini/LiteGemini-v0.4.4.html</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/TDHSC/lite-gemini/releases/download/v0.4.4/LiteGemini-v0.4.4.dmg" length="3699964" type="application/octet-stream" sparkle:edSignature="uCP7OIt2iah4dGiJGY+0HwqwsguvbKWfkVSstNWLMQ39FTkoyrzGPk+SlZrIABa2NXjOiDWEy16V1jElRiS4DA=="/>
+        </item>
+        <item>
+            <title>0.4.3</title>
+            <pubDate>Wed, 14 Oct 2026 03:46:53 +0000</pubDate>
+            <link>https://github.com/TDHSC/lite-gemini/releases/tag/v0.4.3</link>
+            <sparkle:version>10</sparkle:version>
+            <sparkle:shortVersionString>0.4.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://tdhsc.github.io/lite-gemini/LiteGemini-v0.4.3.html</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/TDHSC/lite-gemini/releases/download/v0.4.3/LiteGemini-v0.4.3.dmg" length="3683244" type="application/octet-stream" sparkle:edSignature="iGJKNLVhTE2i/2PKpt8z3bNW0efE4q4a1YO7ehKNbXEjcW3sq9yy7b0r5kx7f3ZIbh2husLIHZ2l9xQfqXQRBw=="/>
+        </item>
+    </channel>
+</rss>
