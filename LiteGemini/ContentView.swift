@@ -57,7 +57,9 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .ignoresSafeArea(.container, edges: .top)
-            .frame(minWidth: 800, minHeight: 600)
+            // Small floor that keeps the traffic lights and drag band usable;
+            // about phone width, so Gemini's narrow layout still fits
+            .frame(minWidth: 360, minHeight: 400)
 
             // Minimalist monochrome splash screen for initial load (no error)
             if !hasFinishedInitialLoad && viewModel.errorMessage == nil {

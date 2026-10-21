@@ -13,6 +13,9 @@ struct LiteGeminiApp: App {
             ContentView(viewModel: webViewModel)
         }
         .windowStyle(.hiddenTitleBar)
+        // The web view has no ideal size, so give first launch an explicit one;
+        // a saved frame still wins after that
+        .defaultSize(width: 800, height: 600)
         .commands {
             // Cmd+Q: quit, or hide to the background when the user keeps the app running.
             // Replacing the menu item instead of vetoing applicationShouldTerminate keeps
