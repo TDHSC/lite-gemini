@@ -110,6 +110,96 @@ Lite Gemini v1 (`v0.4.5`) wraps `https://gemini.google.com/app` directly inside 
 
 ---
 
+### 2.3 Code Organization, Reuse & Isolation Architecture
+
+To keep Main Window, Classic Web Mode, and Quick Mode (`⌥Space` / `⌥⇧Space`) maximally shared with zero boolean-prop tangle and 100% headless testability, all code under `LiteGemini/` follows a strict **Unidirectional Dependency Pyramid** (`Domain` ← `Pure Engines` ← `WebKitHost & Bridge` ← `Stores & Coordinators` ← `Shared UI` ← `Window Shells & AppCoordinator`):
+
+#### 2.3.1 Directory Layout (Synchronized Group — Keep Root Resources Untouched)
+> **`Info.plist` (listed in `PBXFileSystemSynchronizedBuildFileExceptionSet`), `*.xcstrings`, `LiteGemini.entitlements`, `Assets.xcassets`, and `AppIcon.icon` MUST remain at the `LiteGemini/` root.** Swift sources organize into layered subfolders:
+
+```text
+LiteGemini/
+├── App/                        # Composition root & app lifecycle (only layer touching .shared singletons)
+│   ├── LiteGeminiApp.swift     # WindowGroup + system View menu (⌘⇧M mode switch) + Settings scene
+│   ├── AppDelegate.swift       # Main window transparent titlebar & Sparkle gentle reminder delegate
+│   ├── AppCoordinator.swift    # Wires Settings, HotKeys, MainWorkspaceStore & QuickWorkspaceController
+│   └── WindowVisibility.swift  # Main window show/hide fade & background Dock policy
+├── Settings/
+│   ├── SettingsManager.swift   # UserDefaults persistence (enableNativeUI, quickModeTemporaryChat, hotkeys)
+│   ├── SettingsView.swift      # General / Shortcuts (⌃`, ⌘⇧N, ⌥Space, ⌥⇧Space) / Advanced / About
+│   ├── HotKeyManager.swift     # Carbon hotkey dispatch (showHide, newChat, quickNew, quickRecent)
+│   └── HotKeyRecorderView.swift
+├── Domain/                     # Layer 0: Pure Swift 6 Sendable value types & protocols (Foundation only)
+│   ├── AccountModels.swift     # AccountScope, AuthState, ChallengeBannerState
+│   ├── ChatModels.swift        # ConversationSummary, ConversationSnapshot, ChatTurn, MessagePart, ModelOption
+│   ├── ComposerModels.swift    # StagedAttachment, ComposerLayoutMode (.compactPill | .expandedCard)
+│   ├── GeminiURLRoute.swift    # Pure /app, /app/<id>, /gem/..., ?authuser=N parser & builder
+│   └── ChatTransport.swift     # protocol ChatTransport (decouples stores from WKWebView for harnesses)
+├── Storage/                    # Layer 1A: Account-scoped SWR snapshot cache (Foundation + CryptoKit)
+│   └── SWRConversationCache.swift
+├── Markdown/                   # Layer 1B: Incremental AST block parser (Foundation + swift-markdown)
+│   └── IncrementalMarkdownParser.swift
+├── WebKitHost/                 # Layer 2A: Shared WebKit host primitives extracted from legacy WebViewModel
+│   ├── GeminiBaseWebView.swift
+│   ├── NewWindowRouter.swift
+│   ├── PopupWindowController.swift
+│   ├── PopupCoordinator.swift  # Owns active PopupWindowController array; shared by Web, Main & Quick
+│   ├── DownloadManager.swift
+│   ├── TemporaryChatController.swift
+│   ├── ClassicWebScripts.swift # Extracted imeFixScript, themeSyncScript & #if DEBUG consoleLogScript
+│   └── ClassicWebViewModel.swift
+├── Bridge/                     # Layer 2B: Hidden WebView Session Bridge conforming to ChatTransport
+│   ├── GeminiBridgeSelectors.swift
+│   ├── GeminiPayloadParser.swift
+│   ├── GeminiBridgeScript.swift
+│   ├── GeminiActionDriver.swift
+│   ├── GeminiRenderSuppressor.swift
+│   └── GeminiSessionEngine.swift
+├── Store/                      # Layer 3A: Reusable @MainActor conversation & draft state machines
+│   ├── ComposerDraftState.swift# Text, staged attachments, edit-rollback snapshot (survives Quick hide)
+│   ├── ChatSessionStore.swift  # Shared single-conversation engine (turns, 60fps stream coalescer, actions)
+│   └── MainWorkspaceStore.swift# Main window orchestrator (RecentChats, AccountScope, Native↔Web handoff)
+├── QuickMode/                  # Layer 3B: Quick Mode (⌥Space / ⌥⇧Space) lifecycle & NSPanel controller
+│   ├── QuickWorkspaceController.swift # Holds ChatSessionStore + (.barOnly ↔ .expanded) + cold fallback
+│   └── QuickPanelController.swift     # Borderless NSPanel: pre-send resign-key hide, post-send expand & pin
+└── UI/                         # Layer 4: Design system, shared chat surface & thin window shells
+    ├── DesignSystem/           # LiquidGlass.swift, WindowDragArea.swift, MonochromeSparkShape.swift
+    ├── Composer/               # AdaptiveComposerView, ComposerTextView, AttachmentTileStrip, ModelPickerPopover
+    ├── Chat/                   # ChatSurfaceView, ConversationTimelineView, ChatTurnRowView, MarkdownBlockViews,
+    │                           # ThinkingDisclosureView, CodeBlockCardView, InlineImageGalleryView,
+    │                           # ArtifactFallbackCardView, StatusBanners
+    └── Shells/                 # MainRootView, MainTopBarView, RecentChatsPopover, AccountPopover,
+                                # QuickRootView, QuickMiniTopBarView
+```
+
+#### 2.3.2 Five Core Reuse & Isolation Contracts
+1. **Dual `GeminiSessionEngine` Instances over One Shared Cookie Store (`WKWebsiteDataStore.default()`):**
+   - `GeminiSessionEngine` is a single reusable class implementing `ChatTransport`, sharing `WKWebsiteDataStore.default()` (all Google auth cookies and `__Secure-1PSIDTS` rotations), `PopupCoordinator`, and `DownloadManager`.
+   - **Main Window** uses `mainEngine` (whose `WKWebView` also serves directly as the Classic Web Mode view when `interfaceMode == .web`).
+   - **Quick Mode** uses a **lazy `quickEngine`** created only on the first `⌥Space` / `⌥⇧Space` invocation (`0 MB` cold-launch overhead; eligible for idle `WKWebView` teardown after closing while retaining `mostRecentQuickSession` turns in Swift memory). This guarantees invoking Quick Mode **never** navigates Main Window away from an open Classic Web Mode Canvas or interrupts an active Main Window stream.
+2. **Single `ChatSessionStore` Reused Across Both Windows:**
+   - Optimistic user turn insertion, attachment staging, ~60fps streaming chunk coalescing, `Stop`, `Edit` last prompt, `Regenerate`, and `15s` timeout draft rollback live in **one** `ChatSessionStore` class (`init(transport: any ChatTransport, cache: SWRConversationCache?)`), instantiated once inside `MainWorkspaceStore` and once inside `QuickWorkspaceController`.
+3. **Single `ChatSurfaceView` Shared Container (Preserving `NSTextView` Structural Identity):**
+   - Both Main Window and Quick Mode mount the **exact same `ChatSurfaceView<TopBar, EmptyState>`** container (hosting `topBar`, `ConversationTimelineView`, smart scroll-lock + floating `"Scroll to bottom"` pill, dynamic bottom safe-area inset tracking composer height, banners/toasts, and bottom `AdaptiveComposerView`):
+     ```swift
+     struct ChatSurfaceView<TopBar: View, EmptyState: View>: View {
+         @ObservedObject var store: ChatSessionStore
+         var isExpanded: Bool = true                    // true in Main Window; (phase == .expanded) in Quick Mode
+         var quickModeTempBinding: Binding<Bool>? = nil // nil in Main Window; $settings.quickModeTemporaryChat in Quick Mode
+         var onOpenInWebMode: ((String?) -> Void)? = nil
+         @ViewBuilder var topBar: () -> TopBar
+         @ViewBuilder var emptyState: () -> EmptyState
+     }
+     ```
+   - Keeping `AdaptiveComposerView` at a constant SwiftUI structural path inside `ChatSurfaceView` while `isExpanded` flips `false → true` on Quick Mode's first send ensures AppKit's `NSTextView` is **never destroyed or unfocused** during upward window expansion.
+4. **Single `AdaptiveComposerView` + `ComposerDraftState` (Hysteresis-Measured Morphing):**
+   - Single-row vs multi-row layout transitions measure text width against the **single-row text slot width** (with hysteresis) rather than the expanded full-card width, eliminating expand↔collapse oscillation loops.
+   - `ComposerDraftState` lives in the store layer so hiding `QuickPanelController` before the first send preserves draft text and staged tiles with zero serialization overhead.
+5. **Single Compact `ModelPickerPopover` Abstraction:**
+   - Used identically by Main Window (`quickModeTempBinding = nil`) and Quick Mode (`quickModeTempBinding = $settings.quickModeTemporaryChat`), sized strictly via `.fixedSize(horizontal: true, vertical: true)` so the popover hugs its content tightly without trailing whitespace.
+
+---
+
 ## 3. Ground Rules & Constraints
 
 Every session must follow these project invariants (inherited and updated from `docs/plans/2026-10-web-capabilities.md`):
@@ -162,14 +252,14 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
    - Every cached file/record is partitioned under an opaque `accountScope` directory (e.g., SHA-256 prefix of the signed-in Google email / Gaia ID extracted from the page).
    - If the active account cannot be determined or the user is signed out, `SWRConversationCache` neither reads nor writes disk snapshots. Switching `?authuser=0` ↔ `?authuser=1` swaps the active `accountScope` immediately so accounts never bleed into one another.
 3. **Memory-Only Optimistic State:**
-   - Optimistic user prompts, edits in progress, attachments being uploaded, and partial streaming tokens live **exclusively in `@MainActor` memory (`NativeChatStore`)**.
+   - Optimistic user prompts, edits in progress, attachments being uploaded, and partial streaming tokens live **exclusively in `@MainActor` memory (`ChatSessionStore` / `ComposerDraftState`)**.
    - A conversation snapshot is written to disk **only** from complete, server-acknowledged turn payloads carrying canonical IDs. Interrupted streams never leave half-baked turns on disk.
 4. **Temporary Chat Zero-Disk Guarantee:**
    - Whenever `isTemporaryChat == true`, the active session is marked ephemeral: turns are held only in memory, omitted from Recent Chats cache writes, and purged from memory as soon as the user starts a new chat, switches chats, or hits `backgroundTimeout`.
 5. **Deletion, Eviction & Clear Browsing Data:**
    - Cached conversations per `accountScope` are capped at **20** via LRU eviction.
    - If navigating to `/app/<id>` redirects back to `/app` or returns a not-found error from Gemini, that `conversationId` is immediately deleted from the local cache.
-   - Posting `Notification.Name.browsingDataCleared` (from `Settings → Advanced → Clear Data`) synchronously deletes the entire `Cache/v2/` directory and resets `NativeChatStore` to the signed-out welcome state.
+   - Posting `Notification.Name.browsingDataCleared` (from `Settings → Advanced → Clear Data`) synchronously deletes the entire `Cache/v2/` directory and resets `MainWorkspaceStore` and `QuickWorkspaceController` to the signed-out welcome state.
 6. **Cold-Launch & Background Timeout Alignment:**
    - On launch or reopen while `enableNativeUI == true`:
      - If `SettingsManager.shared.backgroundTimeout` has **not** elapsed (e.g., cold launch with `.never`, or reopen within the configured window) and a cached non-temporary last-active conversation exists for the current account, Native Mode renders the cached snapshot in **0ms** and triggers a silent background revalidation of `/app/<id>`.
@@ -211,41 +301,41 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
 
 | ID | Title | Depends On | Status | Commit |
 |---|---|---|---|---|
-| **T01** | WebView perf cleanup & v2 feature flag scaffolding | — | `pending` | — |
+| **T01** | WebKitHost extraction, WebView perf cleanup & v2 feature flag | — | `pending` | — |
 | **T02** | Gemini web protocol & DOM spike (populate §5) | T01 | `pending` | — |
-| **T03** | Domain models, account-scoped SWR cache & `NativeChatStore` | T01 | `pending` | — |
-| **T04** | Liquid Glass design system, `Left Recent` chrome & `View` menu mode handoff | T01, T03 | `pending` | — |
-| **T05** | Session Bridge Part 1: Auth, multi-account & read stream parser | T02, T03, T04 | `pending` | — |
-| **T06** | Native conversation stream UI & incremental Markdown renderer | T03, T04 | `pending` | — |
-| **T07** | 3-state adaptive morphing composer, model picker & attachments | T03, T04 | `pending` | — |
-| **T08** | Session Bridge Part 2: Write drivers (send, attach, stop, edit, regen) | T05, T06, T07 | `pending` | — |
-| **T09** | Quick Mode floating bar (`⌥Space` / `⌥⇧Space`) & expandable mini-window | T07, T08 | `pending` | — |
+| **T03** | `Domain` models, `SWRConversationCache` & reusable `ChatSessionStore` | T01 | `pending` | — |
+| **T04** | `LiquidGlass` design system, `MainTopBarView` & `View` menu mode handoff | T01, T03 | `pending` | — |
+| **T05** | Session Bridge Part 1: `GeminiSessionEngine`, auth & read stream parser | T02, T03, T04 | `pending` | — |
+| **T06** | Shared `ChatSurfaceView`, 120Hz timeline & incremental Markdown renderer | T03, T04 | `pending` | — |
+| **T07** | Shared `AdaptiveComposerView`, compact `ModelPickerPopover` & attachments | T03, T04 | `pending` | — |
+| **T08** | Session Bridge Part 2: `GeminiActionDriver` write path | T05, T06, T07 | `pending` | — |
+| **T09** | Quick Mode (`⌥Space` / `⌥⇧Space`) lazy engine & expandable `NSPanel` | T06, T07, T08 | `pending` | — |
 | **T10** | Hidden WebView render suppression, polish & localization audit | T08, T09 | `pending` | — |
 | **T11** | End-to-end owner acceptance & `v2.0.0` default flip | T10 | `pending` | — |
 
 ---
 
-### T01. WebView Performance Cleanup & v2 Feature Flag Scaffolding
+### T01. WebKitHost Extraction, WebView Performance Cleanup & v2 Feature Flag
 
-- **Goal:** Eliminate existing WebView main-thread IPC/style-polling overhead in Release builds, and wire the `enableNativeUI` feature flag and `InterfaceMode` (`native` vs `web`) coordinator without changing default user behavior.
+- **Goal:** Reorganize existing sources into §2.3's modular directories (`App/`, `Settings/`, `WebKitHost/`, `UI/DesignSystem/`), extract `PopupCoordinator` & `ClassicWebScripts` from the 834-line `WebViewModel`, eliminate Release main-thread IPC/style-polling overhead, and wire the `enableNativeUI` feature flag without changing default `v0.4.5` behavior.
 - **Touched Areas:**
-  - `LiteGemini/WebViewModel.swift`
-  - `LiteGemini/SettingsManager.swift`
-  - `LiteGemini/SettingsView.swift`
-  - `LiteGemini/ContentView.swift`
+  - `LiteGemini/App/`, `LiteGemini/Settings/`, `LiteGemini/WebKitHost/`, `LiteGemini/UI/DesignSystem/` (move existing `.swift` files cleanly via `git mv`, keeping `Info.plist` & resources at `LiteGemini/` root)
+  - `LiteGemini/WebKitHost/ClassicWebScripts.swift` & `LiteGemini/WebKitHost/PopupCoordinator.swift`
+  - `LiteGemini/WebKitHost/ClassicWebViewModel.swift` (slimmed from `WebViewModel.swift`)
+  - `LiteGemini/Settings/SettingsManager.swift` & `LiteGemini/Settings/SettingsView.swift`
   - `LiteGemini/Localizable.xcstrings`
 - **Requirements:**
-  1. **Console bridge `#if DEBUG` gate:** Inject `consoleLogBridgeScript` and register/remove the `"consoleLog"` script message handler only under `#if DEBUG`. Also wrap the `[IME Debug]` native `print` statements in `WebViewModel` and `GeminiBaseWebView` in `#if DEBUG` (keeping `imeFixScript` behavior completely intact).
-  2. **Event-driven theme sync:** Remove `setInterval(reportBg, 1500)` from `themeSyncScript` in `WebViewModel.swift`. Keep the `DOMContentLoaded` / `load` triggers and `MutationObserver`, and add `window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', reportBg)` so theme changes report immediately with zero idle polling.
-  3. **Feature flag & mode state in `SettingsManager`:**
-     - `enableNativeUI: Bool` (key `"enableNativeUI"`, default `false` until T10).
-     - `interfaceMode: InterfaceMode` (`enum InterfaceMode: String { case native, web }`, key `"interfaceMode"`, default `.native`; only active when `enableNativeUI == true`).
-  4. **Settings UI:** In `SettingsView.swift` → `Advanced` tab, add an experimental section with Toggle `"Enable Native UI (Experimental)"` and a caption explaining that it enables the native Liquid Glass chat interface with a quick switch back to Classic Web Mode. Add `en` and `zh-Hans` strings to `Localizable.xcstrings`.
-  5. **Root mode shell:** Update `ContentView.swift` so when `!settings.enableNativeUI`, the view hierarchy behaves identically to `v0.4.5`; when `settings.enableNativeUI` is `true`, it routes between `interfaceMode == .native` (a minimal stub view with a working `"Switch to Web Mode"` button for now) and `interfaceMode == .web` (the Classic WebView with a small `"Switch to Native Mode"` pill).
+  1. **Modular directory setup & `WebViewModel` extraction:** Move existing Swift files into §2.3.1's `App/`, `Settings/`, `WebKitHost/`, and `UI/DesignSystem/` (`MonochromeSparkShape`, `WindowDragArea`) folders; extract inline JS literals into `ClassicWebScripts.swift` and popup array ownership into `PopupCoordinator.swift` so `PopupWindowController` + `NewWindowRouter` can be shared with `GeminiSessionEngine` later without duplication.
+  2. **Console bridge `#if DEBUG` gate:** Inject `consoleLogBridgeScript` and register/remove `"consoleLog"` only under `#if DEBUG`. Wrap `[IME Debug]` native `print` statements in `ClassicWebViewModel` and `GeminiBaseWebView` in `#if DEBUG` (keeping `imeFixScript` behavior intact).
+  3. **Event-driven theme sync:** Remove `setInterval(reportBg, 1500)` from `themeSyncScript`. Keep `DOMContentLoaded` / `load` + `MutationObserver`, and add `window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', reportBg)`.
+  4. **Feature flag & mode state in `SettingsManager`:**
+     - `enableNativeUI: Bool` (key `"enableNativeUI"`, default `false` until T11).
+     - `interfaceMode: InterfaceMode` (`enum InterfaceMode: String { case native, web }`, key `"interfaceMode"`, default `.native`; active only when `enableNativeUI == true`).
+  5. **Settings UI & Root Mode Shell:** Add `"Enable Native UI (Experimental)"` toggle in `SettingsView → Advanced` (`en` + `zh-Hans` in `Localizable.xcstrings`), and route root view between `v0.4.5` Classic WebView (when `!enableNativeUI` or `interfaceMode == .web`) and a minimal Native stub (when `enableNativeUI && interfaceMode == .native`).
 - **Verification:**
-  - Clean Debug & Release Universal builds (zero warnings).
-  - Existing harnesses (`dltest2`, `routertest`, `tempchattest` if recreated) continue to pass.
-- **Commit:** `feat: add experimental Native UI flag and remove Release WebView polling`
+  - Clean Debug & Release Universal builds (zero warnings; verify `Info.plist` exception path remains untouched).
+  - Existing harnesses (`dltest2`, `routertest`, `tempchattest`) pass against `WebKitHost/`.
+- **Commit:** `refactor: extract WebKitHost modules, remove Release polling, and add Native UI flag`
 
 ---
 
@@ -267,27 +357,25 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
 
 ---
 
-### T03. Domain Models, Account-Scoped SWR Cache & `NativeChatStore`
+### T03. `Domain` Models, `SWRConversationCache` & Reusable `ChatSessionStore`
 
-- **Goal:** Build the conflict-free data model, account-scoped `SWRConversationCache`, and `@MainActor` `NativeChatStore` state machine in pure Swift with 100% deterministic harness coverage.
+- **Goal:** Build the zero-WebKit `Domain/` layer (`ChatTransport` protocol + `Sendable` models), account-scoped `SWRConversationCache`, and reusable `@MainActor` `ChatSessionStore` + `MainWorkspaceStore` with 100% deterministic harness coverage.
 - **Touched Areas:**
-  - `LiteGemini/Models/NativeChatModels.swift`
+  - `LiteGemini/Domain/AccountModels.swift`, `ChatModels.swift`, `ComposerModels.swift`, `GeminiURLRoute.swift`, `ChatTransport.swift`
   - `LiteGemini/Storage/SWRConversationCache.swift`
-  - `LiteGemini/Store/NativeChatStore.swift`
+  - `LiteGemini/Store/ComposerDraftState.swift`
+  - `LiteGemini/Store/ChatSessionStore.swift`
+  - `LiteGemini/Store/MainWorkspaceStore.swift`
 - **Requirements:**
-  1. **Value types (`Codable`, `Equatable`, `Sendable`):**
-     - `AccountScope` (opaque hashed scope ID + display email, display name, avatar URL, `authUserIndex: Int?`).
-     - `ConversationSummary` (`id`, `title`, `updatedAt`, `isPinned`).
-     - `ChatTurn` (`id`, `userPrompt`, `userAttachments`, `assistantParts: [MessagePart]`, `thinkingText: String?`, `isThinkingComplete: Bool`, `citations: [CitationLink]`, `responseMetadata`).
-     - `MessagePart`: `.markdown(String)`, `.inlineImage(ImageAttachment)`, `.unsupportedArtifact(ArtifactCardInfo)`.
-     - `ConversationSnapshot` (`accountScopeId`, `conversationId`, `title`, `modelId`, `updatedAt`, `turns: [ChatTurn]`).
-     - `ModelOption` (`id`, `displayName`, `subtitle`, `isSelected`).
+  1. **`Domain/` value types & `ChatTransport` protocol (`Codable`, `Equatable`, `Sendable`, zero AppKit/WebKit imports):**
+     - `AccountScope`, `ConversationSummary`, `ChatTurn`, `MessagePart` (`.markdown`, `.inlineImage`, `.unsupportedArtifact`), `ConversationSnapshot`, `ModelOption`, `StagedAttachment`, `GeminiURLRoute`.
+     - `protocol ChatTransport` defining async stream/action hooks so `ChatSessionStore` is 100% testable with `MockChatTransport`.
   2. **`SWRConversationCache`:**
      - Stores JSON snapshots atomically (`.atomic` write) under `~/Library/Application Support/LiteGemini/Cache/v2/<accountScopeId>/` (configurable base `URL` in `init` so harnesses use `/tmp/`).
      - Enforces **all six invariants in §4**: full-snapshot overwrite (`Server-Always-Wins`), strict `accountScope` isolation, LRU eviction above 20 conversations per account, immediate eviction on server not-found, zero disk writes when `isTemporaryChat == true`, and full directory wipe on `.browsingDataCleared`.
-  3. **`NativeChatStore` (`@MainActor ObservableObject`):**
-     - Holds auth state (`unknown`, `signedOut`, `signedIn(AccountScope, availableAccounts: [AccountScope])`), mid-session `challengeBanner: ChallengeBannerState?`, `recentConversations: [ConversationSummary]`, active conversation (`newChat` vs `existing(id)`), `isTemporaryChat`, `turns`, in-memory-only `streamingTurn` / `pendingSend`, `availableModels`, and `selectedModelId`.
-     - Implements cold-start & reopen restoration respecting `SettingsManager.shared.backgroundTimeout`.
+  3. **Reusable `ChatSessionStore` + `ComposerDraftState` + `MainWorkspaceStore`:**
+     - `ChatSessionStore` encapsulates single-conversation turns, ~60fps streaming chunk coalescer, `ComposerDraftState` (draft text, staged attachments, edit-rollback snapshot), `isTemporaryChat`, `selectedModelId`, and `challengeBanner` — designed to be instantiated identically by `MainWorkspaceStore` and `QuickWorkspaceController` (T09).
+     - `MainWorkspaceStore` composes `ChatSessionStore` with `authState`, `recentConversations`, `?authuser=N` account switching, and cold-start restoration (taking injected `backgroundTimeout` config rather than reading singletons directly).
 - **Verification:**
   - Headless harness `cachetest` in `/tmp/lg-work/cachetest/` covering:
     1. Cold read/write round-trip and atomic full-snapshot overwrite (older turns pruned after web edit disappear locally).
@@ -302,17 +390,16 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
 
 ---
 
-### T04. Liquid Glass Design System & Dual-Mode Window Chrome
+### T04. `LiquidGlass` Design System, `MainTopBarView` & `View` Menu Mode Handoff
 
-- **Goal:** Build the reusable Liquid Glass material components (`macOS 26+` native glass + `macOS 14–15` material fallback), the top floating glass toolbar, and `url_reload_handoff` dual-mode switching.
+- **Goal:** Build the reusable `LiquidGlass` design primitives (`macOS 26+` native glass + `macOS 14–15` material fallback), `MainTopBarView` (`Left Recent` layout), and `url_reload_handoff` dual-mode switching via the system `View` menu.
 - **Touched Areas:**
   - `LiteGemini/UI/DesignSystem/LiquidGlass.swift`
-  - `LiteGemini/UI/Chrome/TopGlassToolbar.swift`
-  - `LiteGemini/UI/Chrome/RecentChatsPopover.swift`
-  - `LiteGemini/UI/Chrome/AccountPillMenu.swift`
-  - `LiteGemini/UI/NativeRootView.swift`
-  - `LiteGemini/ContentView.swift`
-  - `LiteGemini/LiteGeminiApp.swift`
+  - `LiteGemini/UI/Shells/MainTopBarView.swift`
+  - `LiteGemini/UI/Shells/RecentChatsPopover.swift`
+  - `LiteGemini/UI/Shells/AccountPopover.swift`
+  - `LiteGemini/UI/Shells/MainRootView.swift`
+  - `LiteGemini/App/AppCoordinator.swift` & `LiteGemini/App/LiteGeminiApp.swift`
   - `LiteGemini/Localizable.xcstrings`
 - **Requirements:**
   1. **`LiquidGlass` design primitives:**
@@ -320,7 +407,7 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
   2. **Top Glass Chrome (`Left Recent` layout, responsive down to `minWidth: 360`):**
      - Bare macOS traffic lights sit directly on the window's top-left corner (never enclosed inside a pill border), preserving `28pt`+ clearance and `WindowDragArea` double-click zoom.
      - Left cluster (beside traffic lights): **`Recent ▾`** Liquid Glass capsule trigger opening `RecentChatsPopover` (up to 20 cached/synced titles).
-     - Right cluster: paired **`[Temporary Chat · + New Chat]`** Liquid Glass capsule + **standalone circular Avatar** (`28pt` circle only, zero `?0` index label; opens `AccountPillMenu` with active email, signed-in account list, and `"Add Another Account…"`).
+     - Right cluster: paired **`[Temporary Chat · + New Chat]`** Liquid Glass capsule + **standalone circular Avatar** (`28pt` circle only, zero `?0` index label; opens `AccountPopover` with active email, signed-in account list, and `"Add Another Account…"`).
      - **Temporary Chat toggle is strictly icon-only:** Toggling Temporary Chat shifts the ghost icon's fill/accent color (`oklch` violet tint) without ever displaying `"Temp"` text or shifting layout.
      - **Zero in-window `Native | Web` button and zero `MenuBarExtra` status icon:** Keep the window toolbar completely free of mode-switch chrome.
   3. **System `View` Menu Mode Switch & Shortcuts:**
@@ -328,7 +415,7 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
      - Route `Cmd+R` in Native Mode to re-sync the current conversation, and `.newChatRequested` (`Cmd+Shift+N`) to start a fresh chat in whichever mode is active.
   4. **URL Reload Handoff (`url_reload_handoff`):**
      - Switching `Native → Web`: navigates/ensures the underlying `WKWebView` is at the active conversation URL (`/app` or `/app/<id>` with active `?authuser=N`) and reveals the Classic WebView seamlessly.
-     - Switching `Web → Native`: reads `webView.url`, cancels any in-flight native transient state, sets `NativeChatStore` to that URL's conversation (or `/app` new chat), and triggers a fresh bridge sync.
+     - Switching `Web → Native`: reads `webView.url`, cancels any in-flight native transient state, sets `MainWorkspaceStore` to that URL's conversation (or `/app` new chat), and triggers a fresh bridge sync.
 - **Verification:**
   - Headless unit harness `urlhandofftest` verifying URL parsing (`/app`, `/app/<id>`, `/gem/...`, `?authuser=N` preservation) and mode-switch state transitions.
   - Clean Debug & Release Universal builds (confirm `#available(macOS 26.0, *)` compiles cleanly with `MACOSX_DEPLOYMENT_TARGET = 14.0` and `CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE`).
@@ -336,17 +423,15 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
 
 ---
 
-### T05. Session Bridge Part 1: Auth, Multi-Account & Read Stream Parser
+### T05. Session Bridge Part 1: `GeminiSessionEngine`, Auth & Read Stream Parser
 
-- **Goal:** Connect the hidden `WKWebView` read path to `NativeChatStore` and `SWRConversationCache`, covering authentication state, `PopupWindowController` sign-in/account switching, mid-session challenge banners, Recent Chats sync, `/app/<id>` conversation loading, and live `StreamGenerate` streaming.
+- **Goal:** Build the reusable `GeminiSessionEngine` (conforming to `ChatTransport`, sharing `WKWebsiteDataStore.default()`, `PopupCoordinator`, and `DownloadManager`) and connect its read path to `MainWorkspaceStore` / `ChatSessionStore` and `SWRConversationCache`.
 - **Touched Areas:**
   - `LiteGemini/Bridge/GeminiBridgeSelectors.swift`
   - `LiteGemini/Bridge/GeminiBridgeScript.swift`
   - `LiteGemini/Bridge/GeminiPayloadParser.swift`
-  - `LiteGemini/Bridge/GeminiSessionBridge.swift`
-  - `LiteGemini/UI/NativeWelcomeView.swift`
-  - `LiteGemini/UI/Components/ChallengeBannerView.swift`
-  - `LiteGemini/WebViewModel.swift`
+  - `LiteGemini/Bridge/GeminiSessionEngine.swift`
+  - `LiteGemini/UI/Chat/StatusBanners.swift` (`NativeWelcomeView`, `ChallengeBannerView`, `DownloadToastView`)
   - `LiteGemini/Localizable.xcstrings`
 - **Requirements:**
   1. **JS Read Tap (`GeminiBridgeScript`):** Injected at `.atDocumentStart` in main frame (`gemini.google.com`), wrapping `window.fetch` and `XMLHttpRequest` to tee response streams/bodies for the endpoints verified in §5 without mutating or delaying the page's own consumers, posting structured messages to `WKScriptMessageHandler` (`"geminiBridge"`).
@@ -354,38 +439,40 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
   3. **Auth & Account Flows:**
      - Signed-out state shows `NativeWelcomeView` (Liquid Glass card with `"Sign in with Google"` and `"Use Classic Web Mode"`). Clicking `"Sign in with Google"` opens `https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fgemini.google.com%2Fapp` via `window.open` inside the hidden `WKWebView`, reusing `NewWindowRouter` + `PopupWindowController` so completion automatically routes `.moveToMain` and unlocks Native Mode.
      - Account switching (`?authuser=N`) reloads the hidden `WKWebView` at the target account URL, updates `AccountScope`, and loads that account's isolated SWR cache. `"Add Another Account…"` opens `accounts.google.com/AddSession` via the same popup path.
-  4. **Mid-Session Challenge Detection:** If `StreamGenerate`/`batchexecute` fails with auth/challenge status or the main frame redirects off `gemini.google.com`, immediately terminate `NativeChatStore` streaming state and surface `ChallengeBannerView` (`"Verify in Popup"` / `"Switch to Web Mode"`).
+  4. **Mid-Session Challenge Detection:** If `StreamGenerate`/`batchexecute` fails with auth/challenge status or the main frame redirects off `gemini.google.com`, immediately terminate `ChatSessionStore` streaming state and surface `ChallengeBannerView` (`"Verify in Popup"` / `"Switch to Web Mode"`).
 - **Verification:**
-  - Headless harness `bridgetest` in `/tmp/lg-work/bridgetest/` testing `GeminiPayloadParser` + `GeminiSessionBridge` against `WKURLSchemeHandler` mock pages serving T02's sanitized signed-out, signed-in, multi-chunk streaming, Canvas artifact, and mid-stream HTTP 401/redirect fixtures.
+  - Headless harness `bridgetest` in `/tmp/lg-work/bridgetest/` testing `GeminiPayloadParser` + `GeminiSessionEngine` against `WKURLSchemeHandler` mock pages serving T02's sanitized signed-out, signed-in, multi-chunk streaming, Canvas artifact, and mid-stream HTTP 401/redirect fixtures.
   - Clean Debug & Release Universal builds.
 - **Commit:** `feat: add Gemini session read bridge, auth welcome flow, and stream parser`
 
 ---
 
-### T06. Native Conversation Stream UI & Incremental Markdown Renderer
+### T06. Shared `ChatSurfaceView`, 120Hz Timeline & Incremental Markdown Renderer
 
-- **Goal:** Render conversations at a locked 120Hz in Native Mode with incremental AST-backed Markdown, code cards, collapsible thinking, inline images + downloads, citation pills, and Web Mode artifact fallback cards.
+- **Goal:** Build the shared `ChatSurfaceView<TopBar, EmptyState>` container (reused identically by Main Window and Quick Mode so `NSTextView` preserves structural identity across Quick Mode expansion) along with the 120Hz `ConversationTimelineView` and AST-backed `IncrementalMarkdownParser`.
 - **Touched Areas:**
   - `LiteGemini.xcodeproj/project.pbxproj` & `Package.resolved` (add `https://github.com/apple/swift-markdown` SPM package)
-  - `LiteGemini/UI/Markdown/IncrementalMarkdownParser.swift`
-  - `LiteGemini/UI/Markdown/MarkdownBlockView.swift`
-  - `LiteGemini/UI/Markdown/CodeBlockCardView.swift`
+  - `LiteGemini/Markdown/IncrementalMarkdownParser.swift`
+  - `LiteGemini/UI/Chat/ChatSurfaceView.swift`
   - `LiteGemini/UI/Chat/ConversationTimelineView.swift`
   - `LiteGemini/UI/Chat/ChatTurnRowView.swift`
+  - `LiteGemini/UI/Chat/MarkdownBlockViews.swift`
+  - `LiteGemini/UI/Chat/CodeBlockCardView.swift`
   - `LiteGemini/UI/Chat/ThinkingDisclosureView.swift`
   - `LiteGemini/UI/Chat/InlineImageGalleryView.swift`
   - `LiteGemini/UI/Chat/ArtifactFallbackCardView.swift`
   - `LiteGemini/Localizable.xcstrings`
 - **Requirements:**
-  1. **Incremental AST caching:** Completed turns parse their Markdown AST once and memoize the resulting block models by `(turnId, contentHash)`. During live streaming, only the trailing active turn re-parses (throttled to ~30–60fps coalesced UI ticks if chunks arrive faster), keeping scroll performance at 120Hz even in 100-turn chats.
-  2. **Block Views:** Headings, selectable body text (`textSelection(.enabled)`), nested ordered/unordered lists, blockquotes, horizontal scrollable pipe tables, inline monospaced code, and external links. Raw `$...$` / `$$...$$` math blocks render cleanly in styled monospaced math containers without mangling underscores/asterisks.
-  3. **Code Block Cards:** Glass-tinted header showing language identifier + `"Copy"` / `"Copied"` feedback button, horizontal scroll (or soft wrap) monospaced code content.
-  4. **Thinking, Images, Citations & Artifacts:**
+  1. **Shared `ChatSurfaceView<TopBar, EmptyState>` (§2.3.2 #3):** Encapsulates `topBar`, `ConversationTimelineView` + `emptyState` (collapsed when `isExpanded == false` in Quick Mode's pre-send bar), smart scroll-lock + floating `"Scroll to bottom"` pill, dynamic bottom content-margin tracking composer height, banners/toasts, and bottom composer slot so `NSTextView` never unmounts when `isExpanded` flips `false → true`.
+  2. **Incremental AST caching:** Completed turns parse their Markdown AST once and memoize the resulting block models by `(turnId, contentHash)`. During live streaming, only the trailing active turn re-parses (throttled to ~30–60fps coalesced UI ticks if chunks arrive faster), keeping scroll performance at 120Hz even in 100-turn chats.
+  3. **Block Views:** Headings, selectable body text (`textSelection(.enabled)`), nested ordered/unordered lists, blockquotes, horizontal scrollable pipe tables, inline monospaced code, and external links. Raw `$...$` / `$$...$$` math blocks render cleanly in styled monospaced math containers without mangling underscores/asterisks.
+  4. **Code Block Cards:** Recessed tonal card showing language identifier + `"Copy"` / `"Copied"` feedback button, horizontal scroll monospaced code content.
+  5. **Thinking, Images, Citations & Artifacts:**
      - `ThinkingDisclosureView`: compact borderless inline trigger (`✦ Thought for X.Xs ›` / live pulsing `"Thinking…"`), never a full-width gray bar; expands a subtle left-bordered reasoning trace on click.
      - `InlineImageGalleryView`: authenticated image loading (sharing `WKWebsiteDataStore.default().httpCookieStore` session cookies if image URLs require Google auth!), `1pt` translucent black/white `10%` inset outline, click-to-zoom Quick Look / sheet preview, and one-click save button wired to `DownloadManager`.
      - `CitationChipsView`: compact pills rendered inline on the unified turn footer row alongside Turn Actions, opening source URLs via `NSWorkspace.shared.open`.
-     - `ArtifactFallbackCardView`: Liquid Glass card for Canvas / Deep Research / unsupported rich cards with `"Open in Web ↗"` button invoking the T04 mode handoff for `/app/<id>`.
-  5. **Action Bar & Scroll Behavior:** Hover/footer action bar on turns for **Copy**, **Regenerate** (latest model turn), and **Edit** (latest user turn) — wired to store callbacks (connected to bridge drivers in T08). Auto-scroll sticks to bottom during streaming until user scrolls upward manually; floating `"Scroll to bottom"` glass pill restores lock.
+     - `ArtifactFallbackCardView`: Liquid Glass card for Canvas / Deep Research / unsupported rich cards with `"Open in Web ↗"` button invoking the T04 mode handoff on Main Window for `/app/<id>`.
+  6. **Action Bar & Scroll Behavior:** Unified footer bar on turns for **Copy**, **Regenerate** (latest model turn), and **Edit** (latest user turn). Auto-scroll sticks to bottom during streaming until user scrolls upward manually; floating `"Scroll to bottom"` glass pill restores lock.
 - **Verification:**
   - Headless harness `markdowntest` verifying AST block splitting on streaming partial fences, nested lists, pipe tables, math spans, and memoization cache hits.
   - Clean Debug & Release Universal builds (`xcodebuild -resolvePackageDependencies` + universal build).
@@ -393,19 +480,18 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
 
 ---
 
-### T07. 3-State Adaptive Morphing Composer, Model Picker & Attachments
+### T07. Shared `AdaptiveComposerView`, Compact `ModelPickerPopover` & Attachments
 
-- **Goal:** Build the AppKit-backed 3-state adaptive morphing Liquid Glass composer (`26pt` concentric capsule) with native macOS IME/Dictation handling, dynamic Model Picker (with optional Quick-Mode Temp header switch), and `68×68pt` attachment tiles.
+- **Goal:** Build the shared AppKit-backed 3-state `AdaptiveComposerView` (`26pt` concentric capsule) with hysteresis single-row measurement, native macOS IME/Dictation handling, shared compact `ModelPickerPopover`, and `68×68pt` attachment tiles.
 - **Touched Areas:**
   - `LiteGemini/UI/Composer/ComposerTextView.swift` (`NSViewRepresentable` wrapping `NSTextView`)
-  - `LiteGemini/UI/Composer/FloatingGlassComposer.swift`
-  - `LiteGemini/UI/Composer/AttachmentStripView.swift`
+  - `LiteGemini/UI/Composer/AdaptiveComposerView.swift`
+  - `LiteGemini/UI/Composer/AttachmentTileStrip.swift`
   - `LiteGemini/UI/Composer/ModelPickerPopover.swift`
-  - `LiteGemini/Models/StagedAttachment.swift`
-  - `LiteGemini/WebViewModel.swift` (route `focusInput()` on app activation to native composer when in Native Mode)
+  - `LiteGemini/App/AppCoordinator.swift` (route input focus on window activation to native composer when in Native Mode)
   - `LiteGemini/Localizable.xcstrings`
 - **Requirements:**
-  1. **3-State Adaptive Morphing Layout (`FloatingGlassComposer` + `ComposerTextView`):**
+  1. **3-State Adaptive Morphing Layout (`AdaptiveComposerView` + `ComposerTextView`):**
      - **Concentric geometry:** `26pt` outer corner radius with `8pt` inset around `36×36pt` (`18pt` radius) circular left **`+`** and right **`↑` Send / `■` Stop** buttons.
      - **State A (Single-Row Pill):** When text fits on 1 line and no attachments/banners are active, renders as a compact `52pt` single-row pill: `[ (+)  Ask anything…  Model ▾  (↑) ]`.
      - **State B (Multi-Line Card):** As soon as text wraps past the single-row width (measured via single-row width hysteresis so expand/collapse never oscillates) or contains a newline, morphs into a 2-row `26pt` card: full-width text area on top (growing up to **7 visible lines** max before internal scrolling, applying a `16pt` top edge fade mask when `scrollTop > 0`) and `[ (+)  …  Model ▾  (↑) ]` on the bottom bar.
@@ -427,22 +513,22 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
 
 ---
 
-### T08. Session Bridge Part 2: Write Drivers (Send, Attach, Stop, Edit, Regenerate)
+### T08. Session Bridge Part 2: `GeminiActionDriver` Write Path
 
-- **Goal:** Complete the end-to-end interactive loop in Native Mode by wiring prompt sending, staged file/image attachment injection, model switching, Stop Generating, Edit latest prompt, Regenerate, New Chat, and Temporary Chat through `GeminiSessionBridge`.
+- **Goal:** Complete the end-to-end interactive loop in `GeminiSessionEngine` by wiring prompt sending, staged file/image attachment injection, model switching, Stop Generating, Edit latest prompt, Regenerate, New Chat, and Temporary Chat through `GeminiActionDriver`.
 - **Touched Areas:**
   - `LiteGemini/Bridge/GeminiActionDriver.swift`
-  - `LiteGemini/Bridge/GeminiSessionBridge.swift`
-  - `LiteGemini/Store/NativeChatStore.swift`
-  - `LiteGemini/TemporaryChatController.swift` (coordinate cleanly with Native Mode's Temporary Chat toggle)
+  - `LiteGemini/Bridge/GeminiSessionEngine.swift`
+  - `LiteGemini/Store/ChatSessionStore.swift`
+  - `LiteGemini/WebKitHost/TemporaryChatController.swift` (extend to support explicit ON/OFF synchronization for both Main Window and Quick Mode)
   - `LiteGemini/Localizable.xcstrings`
 - **Requirements:**
-  1. **Send & Optimistic Lifecycle:** Submitting from `FloatingGlassComposer` immediately appends an in-memory optimistic turn in `NativeChatStore`, injects staged attachments (if any) + prompt text into the hidden `WKWebView` using §5.3's verified driver, triggers Gemini's send action, streams live chunks via T05's read tap, and upon stream completion replaces the optimistic turn with the canonical server turn and writes the updated snapshot to `SWRConversationCache` (unless `isTemporaryChat`).
+  1. **Send & Optimistic Lifecycle:** Submitting from `AdaptiveComposerView` immediately appends an in-memory optimistic turn in `ChatSessionStore`, injects staged attachments (if any) + prompt text into `GeminiSessionEngine`'s hidden `WKWebView` using §5.3's verified driver, triggers Gemini's send action, streams live chunks via T05's read tap, and upon stream completion replaces the optimistic turn with the canonical server turn and writes the updated snapshot to `SWRConversationCache` (unless `isTemporaryChat`).
   2. **Attachment Injection:** Transfers staged image/file bytes into the hidden page's file input / `DataTransfer` pipeline (chunked/base64 or local blob creation inside page context, capped at sensible size limits with clear error notice on rejection) and waits for Gemini's upload-ready indicator before clicking Send.
   3. **Model Switching:** Selecting a `ModelOption` drives Gemini's model switcher in the hidden page and verifies the active state; surfaces a toast if unavailable.
   4. **Stop, Edit Latest Turn & Regenerate:**
      - **Stop:** Clicks Gemini's stop button in the hidden page and finalizes the partial stream in memory without corrupting cache.
-     - **Edit latest user prompt:** Drives Gemini's edit-last-query UI/action in the hidden page, pruning the replaced response in `NativeChatStore` and streaming the new response.
+     - **Edit latest user prompt:** Drives Gemini's edit-last-query UI/action in the hidden page, pruning the replaced response in `ChatSessionStore` and streaming the new response.
      - **Regenerate latest response:** Triggers Gemini's redo/regenerate control on the last model turn and streams the replacement response.
   5. **New Chat & Temporary Chat:** Starting a new chat or toggling Temporary Chat in Native Mode keeps the hidden page at `/app` and synchronizes `.temp-chat-on` state via `TemporaryChatController`.
   6. **Timeout & Failure Recovery:** Every write driver has an explicit timeout (e.g., 15s to start streaming / attach); if a DOM selector fails (e.g., Google changed a button class), log `.error` in `GeminiBridge`, roll back optimistic send (restoring the user's draft text & attachments into the composer so nothing is lost!), and show a banner with **"Switch to Web Mode"**.
@@ -453,37 +539,35 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
 
 ---
 
-### T09. Quick Mode Floating Bar (`⌥Space` / `⌥⇧Space`) & Expandable Mini-Window
+### T09. Quick Mode (`⌥Space` / `⌥⇧Space`) Lazy Engine & Expandable `NSPanel`
 
-- **Goal:** Deliver the Spotlight-style Quick Mode launcher (`⌥Space` new / `⌥⇧Space` recent with cold-launch fallback) that starts as a single floating morphing input bar, auto-dismisses on click-outside while preserving unsent drafts before the first message, and expands upward into a pinned minimalist companion mini-window once the first message is sent.
+- **Goal:** Deliver Quick Mode (`⌥Space` new / `⌥⇧Space` recent with cold-launch fallback) by composing the shared `ChatSurfaceView`, `ChatSessionStore`, and a lazy second `GeminiSessionEngine` instance inside `QuickPanelController`.
 - **Touched Areas:**
-  - `LiteGemini/QuickMode/QuickChatStore.swift`
-  - `LiteGemini/QuickMode/QuickWindowController.swift` (`NSPanel` floating bar ↔ expanded mini-window controller)
-  - `LiteGemini/QuickMode/QuickRootView.swift`
-  - `LiteGemini/HotKeyManager.swift` (add `HotKeyIDs.quickNew` & `HotKeyIDs.quickRecent`)
-  - `LiteGemini/SettingsManager.swift` (`quickNewHotKey`, `quickRecentHotKey`, `quickModeTemporaryChat`)
-  - `LiteGemini/SettingsView.swift` (add Quick Mode shortcut recorders in `Shortcuts` tab)
+  - `LiteGemini/QuickMode/QuickWorkspaceController.swift`
+  - `LiteGemini/QuickMode/QuickPanelController.swift` (`NSPanel` floating bar ↔ expanded mini-window controller)
+  - `LiteGemini/UI/Shells/QuickRootView.swift` & `LiteGemini/UI/Shells/QuickMiniTopBarView.swift`
+  - `LiteGemini/Settings/HotKeyManager.swift` (add `HotKeyIDs.quickNew` & `HotKeyIDs.quickRecent`)
+  - `LiteGemini/Settings/SettingsManager.swift` (`quickNewHotKey`, `quickRecentHotKey`, `quickModeTemporaryChat`)
+  - `LiteGemini/Settings/SettingsView.swift` (add Quick Mode shortcut recorders in `Shortcuts` tab)
+  - `LiteGemini/App/AppCoordinator.swift`
   - `LiteGemini/Localizable.xcstrings`
 - **Requirements:**
   1. **Global Hotkeys & Cold-Launch Fallback:**
      - `quickNewHotKey`: default **`Option + Space` (`⌥Space`, `kVK_Space` + `optionKey`)**.
-       - If the Quick panel is hidden in `.barOnly` phase (dismissed before sending its first message), re-shows the bar with **any in-progress unsent draft text and staged attachments intact**.
-       - If the Quick panel is already key & visible in `.barOnly` phase, hides it (preserving the draft).
-       - If the active Quick session is in `.expanded` phase (has ≥1 sent message, whether open or closed), saves it as `mostRecentQuickSession` and opens a **fresh `.barOnly` Quick Bar** inheriting `settings.quickModeTemporaryChat`.
+       - If the Quick panel is hidden in `.barOnly` phase (dismissed before sending its first message), re-shows the bar with **any in-progress unsent `ComposerDraftState` text and staged attachments intact**.
+       - If the Quick panel is already key & visible in `.barOnly` phase, hides it (preserving `ComposerDraftState`).
+       - If the active Quick session is in `.expanded` phase (has ≥1 sent message, whether open or closed), saves its turns as `mostRecentQuickSession` and resets `ChatSessionStore` to a **fresh `.barOnly` Quick Bar** inheriting `settings.quickModeTemporaryChat`.
      - `quickRecentHotKey`: default **`Option + Shift + Space` (`⌥⇧Space`, `kVK_Space` + `optionKey | shiftKey`)**.
        - If `mostRecentQuickSession != nil` in the current app process lifetime, opens and focuses the Quick panel in `.expanded` mini-window phase showing that conversation.
        - **Cold-launch fallback:** If the app was freshly launched (`mostRecentQuickSession == nil`), automatically falls back to `⌥Space` behavior (opening a New Quick Bar).
-  2. **Pre-Send Floating Bar (`.barOnly` Phase):**
-     - Borderless transparent floating `NSPanel` (`~548pt` wide, `.canJoinAllSpaces`, `.fullScreenAuxiliary`) rendering **only** `FloatingGlassComposer` with zero window header/chrome.
-     - **Click-outside auto-dismiss:** On `NSWindow.didResignKeyNotification` (unless a child `NSOpenPanel` / popover owns focus) or `Esc` (when no popover/IME marked text is active), hides the panel (`orderOut(nil)`) **without** clearing `unsentDraft` or `unsentAttachments`.
-  3. **Post-Send Expanded Mini-Window (`.expanded` Phase):**
-     - Submitting the first message transitions `.barOnly → .expanded`, smoothly animating the panel frame upward from its bottom edge to `~548 × 500pt` and revealing `ConversationTimelineView` above the composer.
-     - **Minimalist Quick Chrome:** Top-left displays **macOS Traffic Lights (`● ● ●`) only**; top-right displays a **single `30pt` circular `+` (New Quick Chat) glass orb button only**. Omit `Recent`, `Avatar`, and any toolbar `Temp` button.
-     - **Pinned until explicit close:** Once in `.expanded` phase, `didResignKeyNotification` **does not** hide the panel; it closes only when the user clicks the red Close traffic light button or presses `Cmd+W` (hiding via `orderOut(nil)` and retaining `mostRecentQuickSession` in memory for `⌥⇧Space`).
-  4. **Persisted Quick-Mode `Temp` Switch in Model Picker:**
-     - Reuses the shared compact `ModelPickerPopover` (T07) with `quickModeTempBinding` connected to `SettingsManager.shared.quickModeTemporaryChat` (`UserDefaults` key `"quickModeTemporaryChat"`), keeping intrinsic hug-content sizing with zero excess right whitespace.
-     - Remembering user choice: toggling updates `quickModeTemporaryChat` immediately and applies to all subsequent Quick Mode sessions (respecting §4 Invariant 4: zero disk writes when `quickModeTemporaryChat == true`).
-  5. **Bridge Coordination:** Connects cleanly to `GeminiSessionBridge` (or a dedicated hidden `WKWebView` sharing `WKWebsiteDataStore.default()`) so Quick Mode prompts never corrupt or clobber the Main Window's `NativeChatStore`.
+  2. **Shared `ChatSurfaceView` Mounting (Zero `NSTextView` Unmount on Expand):**
+     - `QuickRootView` mounts the shared `ChatSurfaceView` with `isExpanded = (controller.phase == .expanded)` and `topBar = { QuickMiniTopBarView(...) }`.
+     - **Pre-send (`.barOnly`):** Borderless transparent floating `NSPanel` (`~548pt` wide, `.canJoinAllSpaces`, `.fullScreenAuxiliary`) where `isExpanded == false` hides the header & timeline while keeping `AdaptiveComposerView`'s `NSTextView` alive at the same structural path. On `NSWindow.didResignKeyNotification` (unless a child `NSOpenPanel` / popover owns focus) or `Esc` (when no popover/IME marked text is active), hides the panel (`orderOut(nil)`) **without** clearing `ComposerDraftState`.
+     - **Post-send (`.expanded`):** Submitting the first message flips `phase = .expanded`, animating the `NSPanel` frame upward from its bottom edge to `~548 × 500pt` with **zero focus loss**. `QuickMiniTopBarView` renders **macOS Traffic Lights (`● ● ●`) on top-left** and a **single `30pt` circular `+` glass orb on top-right** (no `Recent`, no `Avatar`, no toolbar `Temp`). Once `.expanded`, `didResignKeyNotification` **no longer** hides the panel; it closes only via the red Close button or `Cmd+W`.
+  3. **Persisted Quick-Mode `Temp` Switch in Shared `ModelPickerPopover`:**
+     - Passes `$settings.quickModeTemporaryChat` (`UserDefaults` key `"quickModeTemporaryChat"`) as `quickModeTempBinding` into `ChatSurfaceView` → `AdaptiveComposerView` → `ModelPickerPopover`, remembering the user's choice across all future Quick Mode sessions.
+  4. **Lazy Isolated `GeminiSessionEngine` (§2.3.2 #1):**
+     - `QuickWorkspaceController` instantiates its dedicated `quickEngine: GeminiSessionEngine` lazily on the first Quick Mode summon (sharing `WKWebsiteDataStore.default()`, `PopupCoordinator`, and `DownloadManager` with `mainEngine`), guaranteeing Quick Mode never interrupts or navigates Main Window's active Native or Classic Web session.
 - **Verification:**
   - Headless harness `quickmodetest` in `/tmp/lg-work/quickmodetest/` verifying:
     1. Cold-launch `⌥⇧Space` automatically falls back to `.barOnly` New Quick Bar.
