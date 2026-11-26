@@ -1,8 +1,8 @@
 # Spec: Lite Gemini v2 — Native Liquid Glass UI + Hidden WebView Session Bridge
 
-- **Status:** active (`9 / 11` tickets complete)
+- **Status:** active (`10 / 11` tickets complete — ready for T11 owner signed-in acceptance)
 - **Target release:** `v2.0.0` (developed incrementally on `main` behind a feature flag)
-- **Last updated:** 2026-11-25 (Wave 3 `T06`, `T07`, `T09` complete & wired via `AppCoordinator`)
+- **Last updated:** 2026-11-25 (`T01`–`T10` complete & verified; Universal Release build ready at `/tmp/lg-build/Build/Products/Release/Lite Gemini.app`)
 
 ---
 
@@ -366,8 +366,8 @@ All three streaming transports carry the **same `StreamGenerateResponse` (`_.uv`
 | **T07** | Shared `AdaptiveComposerView`, compact `ModelPickerPopover` & attachments | T03, T04 | `done` | `631a89e` |
 | **T08** | Session Bridge Part 2: `GeminiActionDriver` write path | T05, T06, T07 | `done` | `2ee988f` |
 | **T09** | Quick Mode (`⌥Space` / `⌥⇧Space`) lazy engine & expandable `NSPanel` | T06, T07, T08 | `done` | `068ae7c` |
-| **T10** | Hidden WebView render suppression, polish & localization audit | T08, T09 | `pending` | — |
-| **T11** | End-to-end owner acceptance & `v2.0.0` default flip | T10 | `pending` | — |
+| **T10** | Hidden WebView render suppression, polish & localization audit | T08, T09 | `done` | `76971e9` |
+| **T11** | End-to-end owner acceptance & `v2.0.0` default flip | T10 | `in_progress` | — |
 
 ---
 
