@@ -219,10 +219,11 @@ private struct InlineImageTileView: View {
                         .strokeBorder(insetOutlineColor, lineWidth: 1)
                 )
 
-            if loadedImage != nil && isHovering {
+            if loadedImage != nil {
                 saveOverlayButton
                     .padding(8)
-                    .transition(.opacity)
+                    .opacity(isHovering ? 1 : 0)
+                    .allowsHitTesting(isHovering)
             }
         }
         .onHover { hovering in
@@ -248,6 +249,9 @@ private struct InlineImageTileView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(Text(attachment.altText ?? attachment.suggestedFilename))
             .accessibilityHint(Text("Preview Image"))
+            .accessibilityAction(named: Text("Save Image")) {
+                onSave()
+            }
         } else if loadFailed {
             VStack(spacing: 8) {
                 Image(systemName: "photo.badge.exclamationmark")
@@ -265,8 +269,10 @@ private struct InlineImageTileView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.primary)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 5)
+                        .frame(minHeight: 28)
                         .glassCapsule(interactive: true)
+                        .contentShape(Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -291,8 +297,9 @@ private struct InlineImageTileView: View {
                     .font(.system(size: 11, weight: .semibold))
             }
             .foregroundStyle(Color.primary.opacity(isHoveringSave ? 0.98 : 0.88))
-            .padding(.horizontal, 9)
+            .padding(.horizontal, 10)
             .padding(.vertical, 5)
+            .frame(minWidth: 28, minHeight: 28)
             .glassCapsule(interactive: true)
             .contentShape(Capsule(style: .continuous))
         }
@@ -416,7 +423,7 @@ private struct InlineImagePreviewSheet: View {
                     ProgressView()
                 }
             }
-            .frame(minWidth: 420, idealWidth: 680, maxWidth: 960, minHeight: 320, idealHeight: 520, maxHeight: 740)
+            .frame(minWidth: 340, idealWidth: 680, maxWidth: 960, minHeight: 300, idealHeight: 520, maxHeight: 740)
         }
         .background(LiquidGlassColors.canvasBackground)
         .task(id: attachment.url) {

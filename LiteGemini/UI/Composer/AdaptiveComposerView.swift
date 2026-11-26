@@ -279,8 +279,10 @@ struct AdaptiveComposerView: View {
                 Text("Cancel")
                     .font(.system(size: 11.5, weight: .medium))
                     .foregroundStyle(Color.primary.opacity(0.84))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 9)
-                    .padding(.vertical, 3)
+                    .padding(.vertical, 4)
                     .background(
                         Capsule(style: .continuous)
                             .fill(Color.primary.opacity(0.08))
@@ -326,6 +328,8 @@ struct AdaptiveComposerView: View {
                     Text("Open in Web ↗")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
                         .background(
@@ -343,7 +347,7 @@ struct AdaptiveComposerView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 28, height: 28)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -455,9 +459,11 @@ struct AdaptiveComposerView: View {
             .frame(width: Self.controlButtonSize, height: Self.controlButtonSize)
             .contentShape(Circle())
         }
-        .menuStyle(.borderlessButton)
+        // `.button` + `.plain` prevents macOS borderless `NSPopUpButton` from collapsing the 36pt circle and stripping accessibility labels.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
-        .fixedSize()
+        .frame(width: Self.controlButtonSize, height: Self.controlButtonSize)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.14)) {
                 isHoveringPlus = hovering
@@ -469,6 +475,7 @@ struct AdaptiveComposerView: View {
 
     private var modelPickerTrigger: some View {
         let isQuickTempActive = quickModeTempBinding?.wrappedValue == true
+        let modelTitleMaxWidth: CGFloat = composerWidth < 420 ? 96 : 128
 
         return Button {
             isModelPopoverPresented.toggle()
@@ -487,7 +494,7 @@ struct AdaptiveComposerView: View {
                     )
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .frame(maxWidth: 128, alignment: .leading)
+                    .frame(maxWidth: modelTitleMaxWidth, alignment: .leading)
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
@@ -807,9 +814,15 @@ private nonisolated struct AdaptiveComposerLayout: Layout {
         let primarySize = subviews[3].sizeThatFits(.unspecified)
 
         if !isExpanded {
+            let minTextSlotWidth: CGFloat = containerWidth >= 280 ? 116 : 48
+            let maxModelWidth = max(
+                64,
+                containerWidth - plusSize.width - primarySize.width - horizontalSpacing * 3 - minTextSlotWidth
+            )
+            let clampedModelWidth = min(modelSize.width, maxModelWidth)
             let textSlotWidth = max(
-                40,
-                containerWidth - plusSize.width - modelSize.width - primarySize.width - horizontalSpacing * 3
+                48,
+                containerWidth - plusSize.width - clampedModelWidth - primarySize.width - horizontalSpacing * 3
             )
             let textSize = subviews[1].sizeThatFits(ProposedViewSize(width: textSlotWidth, height: nil))
             let rowHeight = max(controlRowHeight, textSize.height)
@@ -851,16 +864,25 @@ private nonisolated struct AdaptiveComposerLayout: Layout {
                 proposal: ProposedViewSize(primarySize)
             )
 
+            let minTextSlotWidth: CGFloat = bounds.width >= 280 ? 116 : 48
+            let maxModelWidth = max(
+                64,
+                bounds.width - plusSize.width - primarySize.width - horizontalSpacing * 3 - minTextSlotWidth
+            )
+            let clampedModelSize = CGSize(
+                width: min(modelSize.width, maxModelWidth),
+                height: modelSize.height
+            )
             let modelMaxX = bounds.maxX - primarySize.width - horizontalSpacing
             subviews[2].place(
                 at: CGPoint(x: modelMaxX, y: midY),
                 anchor: .trailing,
-                proposal: ProposedViewSize(modelSize)
+                proposal: ProposedViewSize(clampedModelSize)
             )
 
             let textMinX = bounds.minX + plusSize.width + horizontalSpacing
-            let textMaxX = modelMaxX - modelSize.width - horizontalSpacing
-            let textWidth = max(40, textMaxX - textMinX)
+            let textMaxX = modelMaxX - clampedModelSize.width - horizontalSpacing
+            let textWidth = max(48, textMaxX - textMinX)
             let textSize = subviews[1].sizeThatFits(ProposedViewSize(width: textWidth, height: nil))
 
             subviews[1].place(

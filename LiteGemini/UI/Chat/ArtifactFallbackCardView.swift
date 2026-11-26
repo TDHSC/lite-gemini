@@ -55,6 +55,7 @@ struct ArtifactFallbackCardView: View {
                 .foregroundStyle(LiquidGlassColors.sendButtonBlue)
         }
         .frame(width: 32, height: 32)
+        .accessibilityHidden(true)
     }
 
     private var metadataColumn: some View {
@@ -95,6 +96,8 @@ struct ArtifactFallbackCardView: View {
             Text("Open in Web ↗")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.primary.opacity(isHoveringOpen ? 0.98 : 0.86))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 6)
                 .glassCapsule(interactive: true)

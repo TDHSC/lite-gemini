@@ -72,7 +72,6 @@ private struct AttachmentTileView: View {
                 }
 
             removeButton
-                .padding(4)
         }
         .frame(width: AttachmentTileStrip.tileSize, height: AttachmentTileStrip.tileSize)
         .help(attachment.filename)
@@ -134,25 +133,32 @@ private struct AttachmentTileView: View {
 
     private var removeButton: some View {
         Button(action: onRemove) {
-            ZStack {
-                Circle()
-                    .fill(.ultraThinMaterial)
+            ZStack(alignment: .topTrailing) {
+                Color.clear
+                    .frame(width: 28, height: 28)
 
-                Circle()
-                    .fill(Color.black.opacity(isHoveringRemove ? 0.78 : 0.58))
+                ZStack {
+                    Circle()
+                        .fill(.ultraThinMaterial)
 
-                Circle()
-                    .strokeBorder(Color.white.opacity(0.22), lineWidth: LiquidGlassMetrics.hairlineWidth)
+                    Circle()
+                        .fill(Color.black.opacity(isHoveringRemove ? 0.78 : 0.58))
 
-                Image(systemName: "xmark")
-                    .font(.system(size: 8.5, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.96))
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.22), lineWidth: LiquidGlassMetrics.hairlineWidth)
+
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.96))
+                }
+                .frame(
+                    width: AttachmentTileStrip.removeButtonSize,
+                    height: AttachmentTileStrip.removeButtonSize
+                )
+                .padding(4)
             }
-            .frame(
-                width: AttachmentTileStrip.removeButtonSize,
-                height: AttachmentTileStrip.removeButtonSize
-            )
-            .contentShape(Circle())
+            .frame(width: 28, height: 28, alignment: .topTrailing)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in

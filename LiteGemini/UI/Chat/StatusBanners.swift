@@ -88,6 +88,7 @@ struct NativeWelcomeView: View {
             )
             .frame(width: 24, height: 24)
             .glassOrb(size: 56, interactive: false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -149,6 +150,7 @@ struct ChallengeBannerView: View {
         Image(systemName: iconName)
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(LiquidGlassColors.warningAccent)
+            .accessibilityHidden(true)
     }
 
     private var messageText: some View {
@@ -165,6 +167,8 @@ struct ChallengeBannerView: View {
             Text("Verify in Popup")
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(.white)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(
@@ -184,6 +188,8 @@ struct ChallengeBannerView: View {
             Text("Web Mode")
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(Color.primary.opacity(isHoveringWebMode ? 0.96 : 0.84))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background(
@@ -207,7 +213,7 @@ struct ChallengeBannerView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 28, height: 28)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -248,6 +254,7 @@ struct DownloadToastView: View {
             Image(systemName: notice.isError ? "exclamationmark.circle.fill" : "arrow.down.circle.fill")
                 .font(.system(size: 13.5, weight: .medium))
                 .foregroundStyle(notice.isError ? LiquidGlassColors.warningAccent : Color.primary.opacity(0.78))
+                .accessibilityHidden(true)
 
             Text(notice.message)
                 .font(.system(size: 12, weight: .medium))
@@ -267,6 +274,8 @@ struct DownloadToastView: View {
                     Text("Show in Finder")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.primary.opacity(0.92))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 3.5)
                         .background(
@@ -276,6 +285,7 @@ struct DownloadToastView: View {
                         .contentShape(Capsule(style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .layoutPriority(1)
                 .onHover { hovering in
                     withAnimation(.easeInOut(duration: 0.14)) {
                         isHoveringReveal = hovering

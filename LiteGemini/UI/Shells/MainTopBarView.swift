@@ -165,7 +165,8 @@ struct MainTopBarView: View {
                     .frame(width: 14, height: 14)
             }
             .frame(width: 28, height: 24)
-            .contentShape(Capsule(style: .continuous))
+            .frame(width: 28, height: LiquidGlassMetrics.topBarCapsuleHeight)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -193,7 +194,8 @@ struct MainTopBarView: View {
                     .foregroundStyle(Color.primary.opacity(isHoveringNewChat ? 0.96 : 0.78))
             }
             .frame(width: 28, height: 24)
-            .contentShape(Capsule(style: .continuous))
+            .frame(width: 28, height: LiquidGlassMetrics.topBarCapsuleHeight)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in

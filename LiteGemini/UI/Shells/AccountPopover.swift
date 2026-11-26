@@ -244,6 +244,7 @@ struct AccountPopover: View {
         .onHover { hovering in
             hoveredScopeId = hovering ? account.scopeId : (hoveredScopeId == account.scopeId ? nil : hoveredScopeId)
         }
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     private var addAccountButton: some View {

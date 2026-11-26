@@ -85,6 +85,7 @@ struct CodeBlockCardView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
+                .frame(minHeight: 28)
                 .background(
                     Capsule(style: .continuous)
                         .fill(isHoveringCopy ? LiquidGlassColors.hoverHighlight : Color.clear)
@@ -100,7 +101,7 @@ struct CodeBlockCardView: View {
             .accessibilityLabel(didCopy ? Text("Copied") : Text("Copy Code"))
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Actions

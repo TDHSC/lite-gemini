@@ -380,7 +380,7 @@ private struct TurnFooterIconButton: View {
             Image(systemName: systemName)
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(tint ?? Color.primary.opacity(isHovering ? 0.92 : 0.62))
-                .frame(width: 24, height: 24)
+                .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(isHovering ? LiquidGlassColors.hoverHighlight : Color.clear)
@@ -413,7 +413,7 @@ private struct CitationChipsStripView: View {
                 }
             }
         }
-        .frame(height: 24)
+        .frame(height: 28)
     }
 }
 

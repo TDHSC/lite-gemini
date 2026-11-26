@@ -129,6 +129,7 @@ private struct InlineSurfaceErrorBanner: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(LiquidGlassColors.warningAccent)
+                .accessibilityHidden(true)
 
             Text(message)
                 .font(.system(size: 12, weight: .medium))
@@ -142,7 +143,7 @@ private struct InlineSurfaceErrorBanner: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 28, height: 28)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)

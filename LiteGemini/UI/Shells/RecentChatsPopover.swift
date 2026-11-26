@@ -10,6 +10,7 @@ struct RecentChatsPopover: View {
     let onDismiss: () -> Void
 
     @State private var hoveredConversationId: String?
+    @State private var isHoveringRefresh = false
 
     private static let maxDisplayedItems = 20
 
@@ -62,6 +63,7 @@ struct RecentChatsPopover: View {
                 ProgressView()
                     .controlSize(.small)
                     .scaleEffect(0.75)
+                    .frame(width: 28, height: 28)
             } else if store.authState.isSignedIn {
                 Button {
                     Task {
@@ -70,17 +72,26 @@ struct RecentChatsPopover: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 22)
+                        .foregroundStyle(Color.secondary.opacity(isHoveringRefresh ? 1.0 : 0.85))
+                        .frame(width: 28, height: 28)
+                        .background(
+                            Circle()
+                                .fill(isHoveringRefresh ? LiquidGlassColors.hoverHighlight : Color.clear)
+                        )
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.14)) {
+                        isHoveringRefresh = hovering
+                    }
+                }
                 .help(String(localized: "Refresh Recent Chats"))
                 .accessibilityLabel(Text("Refresh Recent Chats"))
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.vertical, 6)
     }
 
     private var emptyStateView: some View {
@@ -163,6 +174,7 @@ struct RecentChatsPopover: View {
         .onHover { hovering in
             hoveredConversationId = hovering ? summary.id : (hoveredConversationId == summary.id ? nil : hoveredConversationId)
         }
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     private func rowBackgroundColor(isActive: Bool, isHovered: Bool) -> Color {

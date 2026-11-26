@@ -76,7 +76,7 @@ struct ModelPickerPopover: View {
             }
         }
         .padding(.horizontal, 11)
-        .padding(.vertical, 8)
+        .padding(.vertical, quickModeTempBinding != nil ? 4 : 8)
     }
 
     private func quickModeTempSwitch(binding: Binding<Bool>) -> some View {
@@ -138,6 +138,7 @@ struct ModelPickerPopover: View {
                         lineWidth: LiquidGlassMetrics.hairlineWidth
                     )
             )
+            .frame(minHeight: 28)
             .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
