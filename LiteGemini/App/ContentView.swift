@@ -31,9 +31,12 @@ struct ContentView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            // Seamless backdrop matching the Gemini surface color.
-            viewModel.pageBackgroundColor
-                .ignoresSafeArea()
+            // Paint the opaque Gemini surface backdrop only in Classic Web Mode so Native
+            // Liquid Glass mode stays genuinely translucent over desktop vibrancy.
+            if !settings.isNativeUIActive {
+                viewModel.pageBackgroundColor
+                    .ignoresSafeArea()
+            }
 
             // Keep the underlying WebView mounted across Native ↔ Web mode transitions so
             // sessions and navigation state stay intact without tearing down WebKit.
@@ -50,6 +53,7 @@ struct ContentView: View {
             // Small floor that keeps the traffic lights and drag band usable;
             // about phone width, so both Native and Classic narrow layouts fit cleanly.
             .frame(minWidth: 360, minHeight: 400)
+            .opacity(settings.isNativeUIActive ? 0 : 1)
             .allowsHitTesting(!settings.isNativeUIActive)
             .accessibilityHidden(settings.isNativeUIActive)
 
@@ -110,8 +114,20 @@ struct ContentView: View {
                 classicWebOverlays
             }
         }
+        .background(WindowSurfaceSyncView(
+            isNativeUIActive: settings.isNativeUIActive,
+            classicBackgroundColor: viewModel.syncedWindowNSColor
+        ))
+        .modifier(WindowContainerBackgroundModifier(
+            isNativeUIActive: settings.isNativeUIActive,
+            classicBackgroundColor: viewModel.pageBackgroundColor
+        ))
         .animation(.easeInOut(duration: 0.25), value: viewModel.downloadNotice?.id)
+        .onChange(of: settings.enableNativeUI) { _, _ in
+            syncMainWindowSurfaceAppearance()
+        }
         .onChange(of: settings.isNativeUIActive) { _, isNowNative in
+            syncMainWindowSurfaceAppearance()
             handoffCoordinator.reconcileExternalNativeUIState(isNowNative)
         }
         .onChange(of: viewModel.isPageReady) { _, newValue in
@@ -266,6 +282,81 @@ struct ContentView: View {
         } else {
             let targetURL = banner.challengeURL ?? workspaceStore.urlForWebModeHandoff()
             handoffCoordinator.openAuthOrChallengeURL(targetURL)
+        }
+    }
+
+    private func syncMainWindowSurfaceAppearance() {
+        let isNative = settings.isNativeUIActive
+        let classicColor = viewModel.syncedWindowNSColor
+        for window in NSApp.windows where window.delegate is AppDelegate {
+            AppDelegate.applyWindowSurfaceAppearance(
+                for: window,
+                isNativeUIActive: isNative,
+                classicBackgroundColor: classicColor
+            )
+        }
+    }
+}
+
+// MARK: - WindowSurfaceSyncView & WindowContainerBackgroundModifier
+
+/// Tracks the hosting `NSWindow` and synchronizes its translucency immediately on attach and
+/// whenever Native Liquid Glass ↔ Classic Web Mode toggles live.
+private struct WindowSurfaceSyncView: NSViewRepresentable {
+
+    let isNativeUIActive: Bool
+    let classicBackgroundColor: NSColor
+
+    func makeNSView(context: Context) -> ObserverNSView {
+        let view = ObserverNSView()
+        view.isNativeUIActive = isNativeUIActive
+        view.classicBackgroundColor = classicBackgroundColor
+        return view
+    }
+
+    func updateNSView(_ nsView: ObserverNSView, context: Context) {
+        nsView.isNativeUIActive = isNativeUIActive
+        nsView.classicBackgroundColor = classicBackgroundColor
+        nsView.syncWindowAppearance()
+    }
+
+    final class ObserverNSView: NSView {
+        var isNativeUIActive: Bool = false
+        var classicBackgroundColor: NSColor = AppDelegate.geminiSurfaceNSColor
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            syncWindowAppearance()
+        }
+
+        func syncWindowAppearance() {
+            guard let window else {
+                return
+            }
+            AppDelegate.applyWindowSurfaceAppearance(
+                for: window,
+                isNativeUIActive: isNativeUIActive,
+                classicBackgroundColor: classicBackgroundColor
+            )
+        }
+    }
+}
+
+/// Applies a structurally invariant `.containerBackground(..., for: .window)` on macOS 15+
+/// so toggling between Native Liquid Glass and Classic Web Mode never tears down hosted views.
+private struct WindowContainerBackgroundModifier: ViewModifier {
+
+    let isNativeUIActive: Bool
+    let classicBackgroundColor: Color
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.containerBackground(
+                isNativeUIActive ? AnyShapeStyle(.clear) : AnyShapeStyle(classicBackgroundColor),
+                for: .window
+            )
+        } else {
+            content
         }
     }
 }

@@ -191,6 +191,8 @@ private struct InlineImageTileView: View {
     let onSave: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var imageTileGlassNamespace
 
     @State private var loadedImage: NSImage?
     @State private var isLoading = false
@@ -220,14 +222,18 @@ private struct InlineImageTileView: View {
                 )
 
             if loadedImage != nil {
-                saveOverlayButton
-                    .padding(8)
-                    .opacity(isHovering ? 1 : 0)
-                    .allowsHitTesting(isHovering)
+                LiquidGlassContainer(spacing: 8) {
+                    if isHovering {
+                        saveOverlayButton
+                            .liquidGlassID("inline-image-save", in: imageTileGlassNamespace)
+                            .liquidGlassTransitionMaterialize()
+                            .padding(8)
+                    }
+                }
             }
         }
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.14)) {
+            withAnimation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion)) {
                 isHovering = hovering
             }
         }

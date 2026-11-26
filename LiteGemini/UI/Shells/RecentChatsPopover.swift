@@ -9,6 +9,7 @@ struct RecentChatsPopover: View {
     @ObservedObject var store: MainWorkspaceStore
     let onDismiss: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredConversationId: String?
     @State private var isHoveringRefresh = false
 
@@ -40,6 +41,7 @@ struct RecentChatsPopover: View {
             }
         }
         .frame(width: 284)
+        .environment(\.colorScheme, colorScheme)
         .onAppear {
             if store.authState.isSignedIn, !store.isRefreshingRecent {
                 Task {
@@ -73,10 +75,11 @@ struct RecentChatsPopover: View {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Color.secondary.opacity(isHoveringRefresh ? 1.0 : 0.85))
-                        .frame(width: 28, height: 28)
-                        .background(
-                            Circle()
-                                .fill(isHoveringRefresh ? LiquidGlassColors.hoverHighlight : Color.clear)
+                        .glassOrb(
+                            size: 28,
+                            variant: .clear,
+                            tint: isHoveringRefresh ? LiquidGlassColors.hoverHighlight : nil,
+                            interactive: true
                         )
                         .contentShape(Circle())
                 }

@@ -31,18 +31,20 @@ Unlike bloated Electron-based apps, Lite Gemini is built entirely with native Sw
 
 ### 🚀 Key Advantages
 
-- **Blazing Fast** — No Electron runtime. Ultra-low memory footprint. Instant launch.
-- **Seamless Integration** — Global hotkey + always-on-top window keeps AI at your fingertips.
-- **Focused Experience** — Auto-focus input, flawless macOS IME support. No more web-based interaction lag.
+- **Blazing Fast** — Native 120Hz SwiftUI + Apple Liquid Glass interface backed by a lightweight hidden WebKit session bridge. No API key required — uses your existing Google web account.
+- **Quick Mode Anywhere** — Summon a floating Quick Bar across any Space or fullscreen app with <kbd>Opt</kbd> + <kbd>Space</kbd>, or reopen your last Quick session with <kbd>Opt</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd>.
+- **Focused Experience** — Auto-focus input, native CJK IME composition support, multi-account switching, Temporary Chat, and instant SWR local conversation cache.
 
 ## ✨ Features
 
 ### 🖥️ Deep System Integration
 
-- **Global Hotkey** — Toggle the window with <kbd>Ctrl</kbd> + <kbd>&#96;</kbd> (customizable or disableable).
+- **Native Liquid Glass & Classic Web Dual Mode** — Native macOS Liquid Glass UI by default, with one-shortcut switching (<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>) to Classic Web Mode whenever you need full web features like Canvas or folder uploads.
+- **Quick Mode Floating Panel** — Press <kbd>Opt</kbd> + <kbd>Space</kbd> for a compact Spotlight-style prompt bar that expands into a pinned mini-window after sending; press <kbd>Opt</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> to jump back into your most recent Quick conversation.
+- **Global Hotkey** — Toggle the main window with <kbd>Ctrl</kbd> + <kbd>&#96;</kbd> (customizable or disableable).
 - **New Chat Hotkey** — Start a new conversation with <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> (customizable or disableable).
 - **Launch at Login** — Start automatically when you log in.
-- **Persistent Session** — Secure cookie storage means you never need to log in again.
+- **Persistent Multi-Account Session** — Sign in once with Google, switch accounts from the top-right avatar, and keep recent chats and cache isolated per account.
 
 ### ⚡ Productivity Boost
 
@@ -91,30 +93,37 @@ Select your target device in Xcode, then press `Cmd + R` to build and run.
 
 ## ⌨️ Keyboard Shortcuts
 
-| Shortcut                                         | Action                                   |
-| ------------------------------------------------ | ---------------------------------------- |
-| <kbd>Ctrl</kbd> + <kbd>`</kbd>                   | Toggle window (customizable in Settings) |
-| <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> | New chat (customizable in Settings)      |
-| <kbd>Cmd</kbd> + <kbd>R</kbd>                    | Reload page                              |
-| <kbd>Cmd</kbd> + <kbd>[</kbd>                    | Go back                                  |
-| <kbd>Cmd</kbd> + <kbd>]</kbd>                    | Go forward                               |
-| <kbd>Cmd</kbd> + <kbd>W</kbd>                    | Hide window                              |
-| <kbd>Cmd</kbd> + <kbd>,</kbd>                    | Open Settings                            |
+| Shortcut                                           | Action                                                  |
+| -------------------------------------------------- | ------------------------------------------------------- |
+| <kbd>Ctrl</kbd> + <kbd>`</kbd>                     | Toggle main window (customizable in Settings)           |
+| <kbd>Opt</kbd> + <kbd>Space</kbd>                  | New Quick Chat floating bar (customizable in Settings)  |
+| <kbd>Opt</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> | Reopen recent Quick Chat (customizable in Settings)   |
+| <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd>   | New chat (customizable in Settings)                     |
+| <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>   | Switch between Native Liquid Glass and Classic Web Mode |
+| <kbd>Cmd</kbd> + <kbd>R</kbd>                      | Reload session                                          |
+| <kbd>Cmd</kbd> + <kbd>[</kbd>                      | Go back (Classic Web Mode)                              |
+| <kbd>Cmd</kbd> + <kbd>]</kbd>                      | Go forward (Classic Web Mode)                           |
+| <kbd>Cmd</kbd> + <kbd>W</kbd>                      | Hide window                                             |
+| <kbd>Cmd</kbd> + <kbd>,</kbd>                      | Open Settings                                           |
 
 ## ⚙️ Settings
 
-| Option              | Description                      | Default                                          |
-| ------------------- | -------------------------------- | ------------------------------------------------ |
-| Background Timeout  | Start a new chat after timeout   | 10 min                                           |
-| Launch at Login     | Auto-start on login              | Off                                              |
-| Always on Top       | Keep window in front             | Off                                              |
-| Window Animation    | Fade transition on show/hide     | On                                               |
-| Show/Hide Window    | Toggle window shortcut           | <kbd>Ctrl</kbd> + <kbd>`</kbd>                   |
-| New Chat            | New chat shortcut                | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> |
-| Language            | UI display language              | System                                           |
-| User-Agent          | Custom browser identity          | Safari UA                                        |
-| Clear Browsing Data | Clear cookies, cache and storage | —                                                |
-| Auto Update Check   | Check for updates automatically  | On                                               |
+| Option                           | Description                                         | Default                                               |
+| -------------------------------- | --------------------------------------------------- | ----------------------------------------------------- |
+| Background Timeout               | Start a new chat after timeout                      | 10 min                                                |
+| New Chats Start as Temporary     | Start new main-window chats in Temporary Chat mode  | Off                                                   |
+| Launch at Login                  | Auto-start on login                                 | Off                                                   |
+| Always on Top                    | Keep window in front                                | Off                                                   |
+| Window Animation                 | Fade transition on show/hide                        | On                                                    |
+| Show/Hide Window                 | Toggle main window shortcut                         | <kbd>Ctrl</kbd> + <kbd>`</kbd>                        |
+| New Chat                         | New chat shortcut                                   | <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd>      |
+| New Quick Chat                   | Quick Mode floating bar shortcut                    | <kbd>Opt</kbd> + <kbd>Space</kbd>                     |
+| Recent Quick Chat                | Reopen recent Quick Mode chat shortcut              | <kbd>Opt</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd>  |
+| Language                         | UI display language                                 | System                                                |
+| Use Native Interface             | Enable Native Liquid Glass UI (`⌘⇧M` switches mode) | On                                                    |
+| User-Agent                       | Custom browser identity                             | Safari UA                                             |
+| Clear Browsing Data              | Clear cookies, cache and local conversation store   | —                                                     |
+| Auto Update Check                | Check for updates automatically                     | On                                                    |
 
 ## 🛠️ Tech Stack
 

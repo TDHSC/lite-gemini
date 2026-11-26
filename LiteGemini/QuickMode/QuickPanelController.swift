@@ -340,9 +340,14 @@ final class AppKitQuickPanelPresenter: QuickPanelPresenting {
                 context.duration = animationDuration
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 panel.animator().setFrame(frame, display: true)
+            } completionHandler: { [weak panel] in
+                Task { @MainActor in
+                    panel?.invalidateShadow()
+                }
             }
         } else {
             panel.setFrame(frame, display: true)
+            panel.invalidateShadow()
         }
     }
 
@@ -351,6 +356,7 @@ final class AppKitQuickPanelPresenter: QuickPanelPresenting {
         if panel.frame != pendingFrame {
             panel.setFrame(pendingFrame, display: true)
         }
+        panel.invalidateShadow()
         panel.orderFrontRegardless()
         panel.makeKey()
     }

@@ -1281,6 +1281,16 @@
         }
       }
     },
+    "Use Native Interface" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用原生界面"
+          }
+        }
+      }
+    },
     "User-Agent" : {
 
     },

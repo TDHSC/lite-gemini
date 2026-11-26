@@ -223,7 +223,7 @@ class SettingsManager: ObservableObject {
         static let windowAnimation = true
         static let defaultTemporaryChat = false
         static let quickModeTemporaryChat = false
-        static let enableNativeUI = false
+        static let enableNativeUI = true
         static let interfaceMode = InterfaceMode.native
     }
 
@@ -508,7 +508,7 @@ class SettingsManager: ObservableObject {
             self.quickModeTemporaryChat = Defaults.quickModeTemporaryChat
         }
 
-        // enableNativeUI defaults to false until v2.0 acceptance
+        // enableNativeUI defaults to true starting in v2.0
         if defaults.object(forKey: Keys.enableNativeUI) != nil {
             self.enableNativeUI = defaults.bool(forKey: Keys.enableNativeUI)
         } else {

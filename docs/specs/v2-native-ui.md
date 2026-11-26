@@ -367,7 +367,7 @@ All three streaming transports carry the **same `StreamGenerateResponse` (`_.uv`
 | **T08** | Session Bridge Part 2: `GeminiActionDriver` write path | T05, T06, T07 | `done` | `2ee988f` |
 | **T09** | Quick Mode (`⌥Space` / `⌥⇧Space`) lazy engine & expandable `NSPanel` | T06, T07, T08 | `done` | `068ae7c` |
 | **T10** | Hidden WebView render suppression, polish & localization audit | T08, T09 | `done` | `76971e9` |
-| **T11** | End-to-end owner acceptance & `v2.0.0` default flip | T10 | `in_progress` | — |
+| **T11** | End-to-end owner acceptance & `v2.0.0` default flip | T10 | `done` | `HEAD` |
 
 ---
 

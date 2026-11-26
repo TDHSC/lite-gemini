@@ -90,6 +90,7 @@ struct AccountPopover: View {
     let onAddAccount: () -> Void
     let onDismiss: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredScopeId: String?
     @State private var isHoveringAddAccount = false
 
@@ -131,6 +132,7 @@ struct AccountPopover: View {
                 .padding(6)
         }
         .frame(width: 268)
+        .environment(\.colorScheme, colorScheme)
     }
 
     // MARK: - Subviews

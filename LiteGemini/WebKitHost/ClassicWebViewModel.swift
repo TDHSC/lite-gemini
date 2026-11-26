@@ -54,6 +54,7 @@ class ClassicWebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKU
     @Published var downloadNotice: DownloadNotice?
     /// Synced background color of the Gemini web page for seamless titlebar & backdrop blending
     @Published var pageBackgroundColor: Color = Color(nsColor: AppDelegate.geminiSurfaceNSColor)
+    private(set) var syncedWindowNSColor: NSColor = AppDelegate.geminiSurfaceNSColor
 
     let webView: WKWebView
 
@@ -537,9 +538,12 @@ class ClassicWebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKU
         case "themeColor":
             if let cssColor = message.body as? String,
                let parsedColor = Self.parseCSSColor(cssColor) {
+                syncedWindowNSColor = parsedColor
                 pageBackgroundColor = Color(nsColor: parsedColor)
                 webView.underPageBackgroundColor = parsedColor
-                webView.window?.backgroundColor = parsedColor
+                if !SettingsManager.shared.isNativeUIActive {
+                    webView.window?.backgroundColor = parsedColor
+                }
             }
         default:
             break

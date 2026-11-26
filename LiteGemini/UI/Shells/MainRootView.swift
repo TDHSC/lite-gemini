@@ -18,6 +18,9 @@ struct MainRootView<Content: View>: View {
     let onSwitchToWebMode: () -> Void
     @ViewBuilder let contentSlot: () -> Content
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var rootGlassNamespace
+
     init(
         workspace: MainWorkspaceStore,
         downloadNotice: DownloadNotice? = nil,
@@ -41,7 +44,7 @@ struct MainRootView<Content: View>: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            LiquidGlassColors.canvasBackground
+            WindowBackdropView()
                 .ignoresSafeArea()
 
             if workspace.authState == .signedOut {
@@ -50,22 +53,26 @@ struct MainRootView<Content: View>: View {
                 signedInShell
             }
 
-            if let notice = downloadNotice {
-                DownloadToastView(
-                    notice: notice,
-                    onDismiss: onDismissDownloadNotice
-                )
-                .padding(.top, LiquidGlassMetrics.topBarHeight + 8)
-                .padding(.horizontal, 16)
-                .ignoresSafeArea(.container, edges: .top)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(3)
+            LiquidGlassContainer(spacing: 8) {
+                if let notice = downloadNotice {
+                    DownloadToastView(
+                        notice: notice,
+                        onDismiss: onDismissDownloadNotice
+                    )
+                    .liquidGlassID("main-download-toast", in: rootGlassNamespace)
+                    .liquidGlassTransitionMaterialize()
+                    .padding(.top, LiquidGlassMetrics.topBarHeight + 8)
+                    .padding(.horizontal, 16)
+                }
             }
+            .ignoresSafeArea(.container, edges: .top)
+            .zIndex(3)
         }
         .frame(minWidth: 360, minHeight: 400)
-        .animation(.easeInOut(duration: 0.22), value: session.isSyncing)
-        .animation(.easeInOut(duration: 0.22), value: session.challengeBanner)
-        .animation(.easeInOut(duration: 0.24), value: downloadNotice?.id)
+        .clearWindowContainerBackground()
+        .animation(.easeOut(duration: 0.20), value: session.isSyncing)
+        .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: session.challengeBanner)
+        .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: downloadNotice?.id)
     }
 
     // MARK: - Shell States
@@ -95,6 +102,7 @@ struct MainRootView<Content: View>: View {
         ZStack(alignment: .top) {
             contentSlot()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea(.container, edges: .top)
 
             VStack(spacing: 0) {
                 MainTopBarView(
@@ -107,16 +115,19 @@ struct MainRootView<Content: View>: View {
                         .transition(.opacity)
                 }
 
-                if let banner = session.challengeBanner {
-                    ChallengeBannerView(
-                        banner: banner,
-                        onVerifyInPopup: { onVerifyChallenge(banner) },
-                        onSwitchToWebMode: onSwitchToWebMode,
-                        onDismiss: { session.challengeBanner = nil }
-                    )
-                    .padding(.horizontal, 14)
-                    .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                LiquidGlassContainer(spacing: 8) {
+                    if let banner = session.challengeBanner {
+                        ChallengeBannerView(
+                            banner: banner,
+                            onVerifyInPopup: { onVerifyChallenge(banner) },
+                            onSwitchToWebMode: onSwitchToWebMode,
+                            onDismiss: { session.challengeBanner = nil }
+                        )
+                        .liquidGlassID("main-challenge-banner", in: rootGlassNamespace)
+                        .liquidGlassTransitionMaterialize()
+                        .padding(.horizontal, 14)
+                        .padding(.top, 8)
+                    }
                 }
             }
             .ignoresSafeArea(.container, edges: .top)

@@ -430,6 +430,9 @@ class ComposerNSTextView: NSTextView {
     /// Invoked as a supported attachment drag enters or leaves the text view.
     var onDragTargetingChanged: ((Bool) -> Void)?
 
+    /// Invoked when the text view gains or resigns first-responder focus.
+    var onFocusChanged: ((Bool) -> Void)?
+
     /// Injectable modifier-flags provider allowing deterministic headless `Shift+Return` testing.
     var currentModifierFlagsProvider: () -> NSEvent.ModifierFlags = {
         NSApp?.currentEvent?.modifierFlags ?? NSEvent.modifierFlags
@@ -470,6 +473,29 @@ class ComposerNSTextView: NSTextView {
             .tiff,
             .string
         ])
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became {
+            onFocusChanged?(true)
+        }
+        return became
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned {
+            onFocusChanged?(false)
+        }
+        return resigned
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            onFocusChanged?(false)
+        }
     }
 
     // MARK: - Key Command & IME Routing
@@ -638,6 +664,7 @@ struct ComposerTextView: NSViewRepresentable {
     let onAttachmentsAdded: ([StagedAttachment]) -> Void
     let onDirectoryDropped: () -> Void
     let onDragTargetingChanged: (Bool) -> Void
+    var onFocusChanged: ((Bool) -> Void)? = nil
 
     // MARK: - NSViewRepresentable
 
@@ -782,6 +809,9 @@ struct ComposerTextView: NSViewRepresentable {
             }
             textView.onDragTargetingChanged = { [weak self] targeted in
                 self?.parent.onDragTargetingChanged(targeted)
+            }
+            textView.onFocusChanged = { [weak self] focused in
+                self?.parent.onFocusChanged?(focused)
             }
         }
 

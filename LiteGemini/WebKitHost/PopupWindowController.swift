@@ -77,7 +77,11 @@ final class PopupWindowController: NSObject, NSWindowDelegate, WKNavigationDeleg
         window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
-        window.backgroundColor = parentWindow?.backgroundColor ?? AppDelegate.geminiSurfaceNSColor
+        if let parentWindow, parentWindow.isOpaque, let parentBackground = parentWindow.backgroundColor {
+            window.backgroundColor = parentBackground
+        } else {
+            window.backgroundColor = AppDelegate.geminiSurfaceNSColor
+        }
         window.title = initialURL?.host ?? ""
         // With "Always on top" on, a normal-level popup would open behind the main window
         window.level = parentWindow?.level ?? .normal

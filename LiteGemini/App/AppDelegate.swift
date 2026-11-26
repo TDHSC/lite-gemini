@@ -73,6 +73,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return false
     }
 
+    // MARK: - Window Appearance
+
+    /// Synchronizes an `NSWindow`'s translucency between Native Liquid Glass mode (clear, non-opaque
+    /// so desktop vibrancy and `.glassEffect` refraction work) and Classic Web Mode (opaque surface).
+    static func applyWindowSurfaceAppearance(
+        for window: NSWindow,
+        isNativeUIActive: Bool,
+        classicBackgroundColor: NSColor = AppDelegate.geminiSurfaceNSColor
+    ) {
+        if isNativeUIActive {
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        } else {
+            window.isOpaque = true
+            window.backgroundColor = classicBackgroundColor
+        }
+        window.invalidateShadow()
+    }
+
     // MARK: - Private Methods
 
     /// Find the main window, set AppDelegate as its delegate, and make its titlebar seamlessly blend with Gemini
@@ -84,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = false
-        window.backgroundColor = Self.geminiSurfaceNSColor
+        Self.applyWindowSurfaceAppearance(for: window, isNativeUIActive: SettingsManager.shared.isNativeUIActive)
         window.toolbar = nil
     }
 }

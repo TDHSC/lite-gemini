@@ -779,7 +779,6 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
             if let cssColor = message.body as? String,
                let parsedColor = Self.parseCSSColor(cssColor) {
                 webView.underPageBackgroundColor = parsedColor
-                webView.window?.backgroundColor = parsedColor
                 onPageBackgroundColorChanged?(parsedColor)
             }
 

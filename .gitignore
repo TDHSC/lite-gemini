@@ -31,3 +31,6 @@ Packages/
 *.dSYM
 timeline.xctimeline
 playground.xcworkspace
+
+# AI
+.claude/

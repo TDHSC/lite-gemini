@@ -10,8 +10,7 @@ struct NativeWelcomeView: View {
     let onSignIn: () -> Void
     let onSwitchToWebMode: () -> Void
 
-    @State private var isHoveringSignIn = false
-    @State private var isHoveringWebMode = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 20) {
@@ -29,48 +28,34 @@ struct NativeWelcomeView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(spacing: 10) {
-                Button(action: onSignIn) {
-                    Text("Sign in with Google")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 36)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(LiquidGlassColors.sendButtonBlue.opacity(isHoveringSignIn ? 0.90 : 1.0))
-                        )
-                        .contentShape(Capsule(style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.14)) {
-                        isHoveringSignIn = hovering
+            LiquidGlassContainer(spacing: 10) {
+                VStack(spacing: 10) {
+                    Button(action: onSignIn) {
+                        Text("Sign in with Google")
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 22)
                     }
-                }
+                    .controlSize(.large)
+                    .liquidGlassButtonStyle(prominent: true, tint: LiquidGlassColors.sendButtonBlue)
 
-                Button(action: onSwitchToWebMode) {
-                    Text("Switch to Classic Web Mode")
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(Color.primary.opacity(isHoveringWebMode ? 0.96 : 0.82))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 34)
-                        .glassCapsule(interactive: true)
-                        .contentShape(Capsule(style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.14)) {
-                        isHoveringWebMode = hovering
+                    Button(action: onSwitchToWebMode) {
+                        Text("Switch to Classic Web Mode")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 20)
                     }
+                    .controlSize(.large)
+                    .liquidGlassButtonStyle(prominent: false)
                 }
             }
             .padding(.top, 2)
         }
+        .environment(\.colorScheme, colorScheme)
         .padding(.horizontal, 26)
         .padding(.vertical, 28)
         .frame(maxWidth: 340)
-        .glassCard(cornerRadius: 22)
+        .glassCard(cornerRadius: 22, variant: .clear, tint: LiquidGlassColors.clearCardTint)
         .padding(.horizontal, 16)
     }
 
@@ -87,7 +72,7 @@ struct NativeWelcomeView: View {
                 )
             )
             .frame(width: 24, height: 24)
-            .glassOrb(size: 56, interactive: false)
+            .glassOrb(size: 56, variant: .clear, interactive: false)
             .accessibilityHidden(true)
     }
 }
@@ -103,17 +88,21 @@ struct ChallengeBannerView: View {
     let onSwitchToWebMode: () -> Void
     var onDismiss: (() -> Void)? = nil
 
-    @State private var isHoveringVerify = false
-    @State private var isHoveringWebMode = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             wideLayout
             compactLayout
         }
+        .environment(\.colorScheme, colorScheme)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .glassCard(cornerRadius: LiquidGlassMetrics.defaultCardCornerRadius, tint: LiquidGlassColors.warningGlassTint)
+        .glassCard(
+            cornerRadius: LiquidGlassMetrics.defaultCardCornerRadius,
+            variant: .clear,
+            tint: LiquidGlassColors.warningGlassTint
+        )
     }
 
     // MARK: - Layouts
@@ -163,45 +152,25 @@ struct ChallengeBannerView: View {
 
     @ViewBuilder
     private var actionButtons: some View {
-        Button(action: onVerifyInPopup) {
-            Text("Verify in Popup")
-                .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(LiquidGlassColors.sendButtonBlue.opacity(isHoveringVerify ? 0.88 : 1.0))
-                )
-                .contentShape(Capsule(style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.14)) {
-                isHoveringVerify = hovering
-            }
-        }
+        LiquidGlassContainer(spacing: 8) {
+            HStack(spacing: 8) {
+                Button(action: onVerifyInPopup) {
+                    Text("Verify in Popup")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                .controlSize(.small)
+                .liquidGlassButtonStyle(prominent: true, tint: LiquidGlassColors.sendButtonBlue)
 
-        Button(action: onSwitchToWebMode) {
-            Text("Web Mode")
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(Color.primary.opacity(isHoveringWebMode ? 0.96 : 0.84))
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color.primary.opacity(isHoveringWebMode ? 0.13 : 0.08))
-                )
-                .contentShape(Capsule(style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.14)) {
-                isHoveringWebMode = hovering
+                Button(action: onSwitchToWebMode) {
+                    Text("Web Mode")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                .controlSize(.small)
+                .liquidGlassButtonStyle(prominent: false)
             }
         }
     }
@@ -246,8 +215,8 @@ struct DownloadToastView: View {
     let onDismiss: () -> Void
     var onShowInFinder: ((URL) -> Void)? = nil
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isHoveringToast = false
-    @State private var isHoveringReveal = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -273,29 +242,18 @@ struct DownloadToastView: View {
                 } label: {
                     Text("Show in Finder")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.primary.opacity(0.92))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 3.5)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(Color.primary.opacity(isHoveringReveal ? 0.16 : 0.10))
-                        )
-                        .contentShape(Capsule(style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .controlSize(.small)
+                .liquidGlassButtonStyle(prominent: false)
                 .layoutPriority(1)
-                .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.14)) {
-                        isHoveringReveal = hovering
-                    }
-                }
             }
         }
+        .environment(\.colorScheme, colorScheme)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .glassCapsule()
+        .glassCapsule(variant: .clear, tint: LiquidGlassColors.clearCardTint)
         .onHover { hovering in
             isHoveringToast = hovering
         }

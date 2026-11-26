@@ -18,8 +18,10 @@ struct QuickMiniTopBarView: View {
     let onNewQuickChat: () -> Void
     var showsNewQuickChatButton: Bool = true
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHoveringTrafficLights = false
     @State private var isHoveringNewQuickChat = false
+    @Namespace private var quickTopBarGlassNamespace
 
     private static let trafficLightDiameter: CGFloat = 12
     private static let closeHitTargetSize: CGFloat = 40
@@ -34,14 +36,17 @@ struct QuickMiniTopBarView: View {
 
                 Spacer(minLength: 8)
 
-                if showsNewQuickChatButton {
-                    newQuickChatButton
-                        .padding(.trailing, 12)
+                LiquidGlassContainer(spacing: 8) {
+                    if showsNewQuickChatButton {
+                        newQuickChatButton
+                    }
                 }
+                .padding(.trailing, 12)
             }
         }
         .frame(maxWidth: .infinity)
         .frame(height: LiquidGlassMetrics.topBarHeight)
+        .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: showsNewQuickChatButton)
     }
 
     // MARK: - Leading Traffic Lights
@@ -138,7 +143,9 @@ struct QuickMiniTopBarView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color.primary.opacity(isHoveringNewQuickChat ? 0.96 : 0.80))
             }
-            .glassOrb(size: Self.newChatOrbSize, interactive: true)
+            .glassOrb(size: Self.newChatOrbSize, variant: .clear, interactive: true)
+            .liquidGlassID("quick-top-new-chat", in: quickTopBarGlassNamespace)
+            .liquidGlassTransitionMaterialize()
             .contentShape(Circle())
         }
         .buttonStyle(.plain)

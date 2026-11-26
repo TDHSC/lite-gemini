@@ -16,6 +16,9 @@ struct ConversationTimelineView: View {
     private static let bottomAnchorID = "lg-timeline-bottom-anchor"
     private static let maxReadingColumnWidth: CGFloat = 780
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var timelineGlassNamespace
+
     @State private var isAutoScrollLocked = true
     @State private var showsScrollToBottomPill = false
     @State private var viewportSize: CGSize = CGSize(width: 640, height: 500)
@@ -33,6 +36,10 @@ struct ConversationTimelineView: View {
 
     private var activeStreamingTurnId: String? {
         store.streamingState.activeTurnId
+    }
+
+    private var bottomScrollTargetID: String {
+        store.turns.last?.id ?? Self.bottomAnchorID
     }
 
     /// Lightweight scalar change key that advances on each coalesced streaming flush so
@@ -54,11 +61,28 @@ struct ConversationTimelineView: View {
         }
     }
 
+    private var usesNativeScrollSafeAreaBars: Bool {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            return true
+        }
+        #endif
+        return false
+    }
+
+    private var contentTopPadding: CGFloat {
+        usesNativeScrollSafeAreaBars ? 12 : (topContentInset + 14)
+    }
+
+    private var contentBottomPadding: CGFloat {
+        usesNativeScrollSafeAreaBars ? 16 : (bottomContentInset + 18)
+    }
+
     var body: some View {
         ScrollViewReader { scrollProxy in
             ZStack(alignment: .bottom) {
                 ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(alignment: .leading, spacing: 24) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(store.turns.enumerated()), id: \.element.id) { index, turn in
                             let isLatest = (index == store.turns.count - 1)
                             let isTurnStreaming = isLatest && (store.isStreaming || activeStreamingTurnId == turn.id)
@@ -83,16 +107,19 @@ struct ConversationTimelineView: View {
                                 },
                                 onSaveInlineImage: onSaveInlineImage
                             )
+                            .padding(.bottom, isLatest ? contentBottomPadding : 24)
+                            .id(turn.id)
                         }
 
-                        Color.clear
-                            .frame(height: 1)
-                            .id(Self.bottomAnchorID)
+                        if store.turns.isEmpty {
+                            Color.clear
+                                .frame(height: contentBottomPadding)
+                                .id(Self.bottomAnchorID)
+                        }
                     }
                     .frame(maxWidth: Self.maxReadingColumnWidth, alignment: .leading)
                     .padding(.horizontal, horizontalPadding)
-                    .padding(.top, topContentInset + 14)
-                    .padding(.bottom, bottomContentInset + 18)
+                    .padding(.top, contentTopPadding)
                     .frame(maxWidth: .infinity)
                     .background(
                         GeometryReader { contentGeometry in
@@ -107,6 +134,10 @@ struct ConversationTimelineView: View {
                         }
                     )
                 }
+                .liquidGlassFloatingScrollChrome(
+                    topInset: topContentInset,
+                    bottomInset: bottomContentInset
+                )
                 .coordinateSpace(name: Self.scrollCoordinateSpace)
                 .background(
                     GeometryReader { viewportGeometry in
@@ -117,22 +148,33 @@ struct ConversationTimelineView: View {
                     }
                 )
                 .onPreferenceChange(TimelineViewportSizePreferenceKey.self) { newSize in
-                    if abs(newSize.width - viewportSize.width) > 0.5 || abs(newSize.height - viewportSize.height) > 0.5 {
+                    guard let newSize else { return }
+                    let widthChanged = abs(newSize.width - viewportSize.width) > 0.5
+                    let heightChanged = abs(newSize.height - viewportSize.height) > 0.5
+                    if widthChanged || heightChanged {
                         viewportSize = newSize
+                        if isAutoScrollLocked && !store.turns.isEmpty {
+                            scrollTracker.markProgrammaticScroll()
+                            scrollProxy.scrollTo(bottomScrollTargetID, anchor: .bottom)
+                        }
                     }
                 }
                 .onPreferenceChange(TimelineScrollMetricsPreferenceKey.self) { metrics in
+                    guard let metrics else { return }
                     handleScrollMetricsChange(metrics)
                 }
 
-                if showsScrollToBottomPill && !store.turns.isEmpty {
-                    scrollToBottomButton(proxy: scrollProxy)
-                        .padding(.bottom, bottomContentInset + 12)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .zIndex(2)
+                LiquidGlassContainer(spacing: 8) {
+                    if showsScrollToBottomPill && !store.turns.isEmpty {
+                        scrollToBottomButton(proxy: scrollProxy)
+                            .liquidGlassID("timeline-scroll-bottom-pill", in: timelineGlassNamespace)
+                            .liquidGlassTransitionMaterialize()
+                            .padding(.bottom, bottomContentInset + 12)
+                    }
                 }
+                .zIndex(2)
             }
-            .animation(.easeInOut(duration: 0.18), value: showsScrollToBottomPill)
+            .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: showsScrollToBottomPill)
             .onChange(of: store.conversationId) { _, _ in
                 reengageAutoScrollAndJump(proxy: scrollProxy, animated: false)
             }
@@ -146,17 +188,23 @@ struct ConversationTimelineView: View {
                     return
                 }
                 scrollTracker.markProgrammaticScroll()
-                scrollProxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                scrollProxy.scrollTo(bottomScrollTargetID, anchor: .bottom)
             }
             .onChange(of: bottomContentInset) { oldInset, newInset in
-                if newInset > oldInset + 1, isAutoScrollLocked, !store.turns.isEmpty {
+                if abs(newInset - oldInset) > 1, isAutoScrollLocked, !store.turns.isEmpty {
                     scrollTracker.markProgrammaticScroll()
-                    scrollProxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                    scrollProxy.scrollTo(bottomScrollTargetID, anchor: .bottom)
                 }
             }
             .onAppear {
                 if !store.turns.isEmpty {
                     reengageAutoScrollAndJump(proxy: scrollProxy, animated: false)
+                    DispatchQueue.main.async {
+                        if isAutoScrollLocked, !store.turns.isEmpty {
+                            scrollTracker.markProgrammaticScroll()
+                            scrollProxy.scrollTo(bottomScrollTargetID, anchor: .bottom)
+                        }
+                    }
                 }
             }
         }
@@ -177,7 +225,7 @@ struct ConversationTimelineView: View {
             .foregroundStyle(Color.primary.opacity(isHoveringScrollPill ? 0.98 : 0.86))
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .glassCapsule(interactive: true)
+            .glassCapsule(variant: .clear, interactive: true)
             .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
@@ -198,10 +246,10 @@ struct ConversationTimelineView: View {
 
         if animated {
             withAnimation(.easeOut(duration: 0.22)) {
-                proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                proxy.scrollTo(bottomScrollTargetID, anchor: .bottom)
             }
         } else {
-            proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+            proxy.scrollTo(bottomScrollTargetID, anchor: .bottom)
         }
     }
 
@@ -212,7 +260,10 @@ struct ConversationTimelineView: View {
         }
 
         let scrollOffsetY = -metrics.contentMinY
-        let distanceFromBottom = max(0, metrics.contentMaxY - viewportHeight)
+        let effectiveViewportBottom = usesNativeScrollSafeAreaBars
+            ? max(0, viewportHeight - bottomContentInset)
+            : viewportHeight
+        let distanceFromBottom = max(0, metrics.contentMaxY - effectiveViewportBottom)
         let previousOffsetY = scrollTracker.lastScrollOffsetY
         scrollTracker.lastScrollOffsetY = scrollOffsetY
 
@@ -278,17 +329,21 @@ private nonisolated struct TimelineScrollMetrics: Equatable, Sendable {
 }
 
 private nonisolated struct TimelineScrollMetricsPreferenceKey: PreferenceKey {
-    static let defaultValue = TimelineScrollMetrics(contentMinY: 0, contentMaxY: 0)
+    static let defaultValue: TimelineScrollMetrics? = nil
 
-    static func reduce(value: inout TimelineScrollMetrics, nextValue: () -> TimelineScrollMetrics) {
-        value = nextValue()
+    static func reduce(value: inout TimelineScrollMetrics?, nextValue: () -> TimelineScrollMetrics?) {
+        if let next = nextValue() {
+            value = next
+        }
     }
 }
 
 private nonisolated struct TimelineViewportSizePreferenceKey: PreferenceKey {
-    static let defaultValue = CGSize(width: 640, height: 500)
+    static let defaultValue: CGSize? = nil
 
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        value = nextValue()
+    static func reduce(value: inout CGSize?, nextValue: () -> CGSize?) {
+        if let next = nextValue() {
+            value = next
+        }
     }
 }

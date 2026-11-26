@@ -41,6 +41,7 @@ struct AdaptiveComposerView: View {
 
     // MARK: - Internal View State
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var composerWidth: CGFloat = 548
     @State private var modelButtonWidth: CGFloat = 86
     @State private var measuredTextHeight: CGFloat = ComposerTextView.singleLineHeight
@@ -52,7 +53,11 @@ struct AdaptiveComposerView: View {
     @State private var isHoveringPrimary: Bool = false
     @State private var isTextViewDropTargeted: Bool = false
     @State private var isOuterDropTargeted: Bool = false
+    @State private var isTextViewFocused: Bool = false
     @State private var editFocusTrigger: Int = 0
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Namespace private var composerGlassNamespace
 
     // MARK: - Initializers
 
@@ -125,6 +130,12 @@ struct AdaptiveComposerView: View {
         isTextViewDropTargeted || isOuterDropTargeted
     }
 
+    /// Clear optical glass when idle (`!focused` and empty draft), transitioning to frosted `.regular`
+    /// glass as soon as the user focuses, types, stages attachments, or opens the model picker.
+    private var isComposerFrosted: Bool {
+        isTextViewFocused || !draft.text.isEmpty || hasTopExtras || isModelPopoverPresented
+    }
+
     private var selectedModelTitle: String {
         if let selectedId = store.selectedModelId,
            let matched = store.availableModels.first(where: { $0.id == selectedId }) {
@@ -156,44 +167,50 @@ struct AdaptiveComposerView: View {
     // MARK: - Body
 
     var body: some View {
-        VStack(alignment: .leading, spacing: hasTopExtras ? 8 : 0) {
-            if hasTopExtras {
-                topExtrasSection
-                    .padding(.top, 4)
-                    .padding(.horizontal, 4)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+        LiquidGlassContainer(spacing: 8) {
+            VStack(alignment: .leading, spacing: hasTopExtras ? 8 : 0) {
+                if hasTopExtras {
+                    topExtrasSection
+                        .padding(.top, 4)
+                        .padding(.horizontal, 4)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
 
-            AdaptiveComposerLayout(
-                isExpanded: layoutMode == .expandedCard,
-                controlRowHeight: Self.controlButtonSize,
-                horizontalSpacing: Self.horizontalControlSpacing,
-                expandedTextHorizontalInset: Self.expandedTextHorizontalInset,
-                expandedTextTopPadding: hasTopExtras ? 0 : Self.expandedTextTopPadding,
-                expandedRowSpacing: Self.expandedRowSpacing
-            ) {
-                plusAttachmentControl
-                textInputRegion
-                modelPickerTrigger
-                primaryActionButton
+                AdaptiveComposerLayout(
+                    isExpanded: layoutMode == .expandedCard,
+                    controlRowHeight: Self.controlButtonSize,
+                    horizontalSpacing: Self.horizontalControlSpacing,
+                    expandedTextHorizontalInset: Self.expandedTextHorizontalInset,
+                    expandedTextTopPadding: hasTopExtras ? 0 : Self.expandedTextTopPadding,
+                    expandedRowSpacing: Self.expandedRowSpacing
+                ) {
+                    plusAttachmentControl
+                    textInputRegion
+                    modelPickerTrigger
+                    primaryActionButton
+                }
             }
-        }
-        .padding(LiquidGlassMetrics.composerInsetPadding)
-        .glassCard(
-            cornerRadius: LiquidGlassMetrics.composerOuterCornerRadius,
-            tint: isDropTargeted ? LiquidGlassColors.sendButtonBlue.opacity(0.08) : nil
-        )
-        .overlay {
-            if isDropTargeted {
-                RoundedRectangle(
-                    cornerRadius: LiquidGlassMetrics.composerOuterCornerRadius,
-                    style: .continuous
-                )
-                .strokeBorder(
-                    LiquidGlassColors.sendButtonBlue.opacity(0.65),
-                    lineWidth: 1.5
-                )
-                .allowsHitTesting(false)
+            .padding(LiquidGlassMetrics.composerInsetPadding)
+            .glassCard(
+                cornerRadius: LiquidGlassMetrics.composerOuterCornerRadius,
+                variant: isComposerFrosted ? .regular : .clear,
+                tint: isDropTargeted ? LiquidGlassColors.sendButtonBlue.opacity(0.08) : nil,
+                interactive: true
+            )
+            .liquidGlassID("composer-shell", in: composerGlassNamespace)
+            .liquidGlassTransitionMatchedGeometry()
+            .overlay {
+                if isDropTargeted {
+                    RoundedRectangle(
+                        cornerRadius: LiquidGlassMetrics.composerOuterCornerRadius,
+                        style: .continuous
+                    )
+                    .strokeBorder(
+                        LiquidGlassColors.sendButtonBlue.opacity(0.65),
+                        lineWidth: 1.5
+                    )
+                    .allowsHitTesting(false)
+                }
             }
         }
         .background(
@@ -203,13 +220,13 @@ struct AdaptiveComposerView: View {
             }
         )
         .onPreferenceChange(ComposerWidthPreferenceKey.self) { width in
-            if abs(width - composerWidth) > 0.5 {
+            if let width, abs(width - composerWidth) > 0.5 {
                 composerWidth = width
                 recomputeWrapState(for: draft.text)
             }
         }
         .onPreferenceChange(ModelButtonWidthPreferenceKey.self) { width in
-            if abs(width - modelButtonWidth) > 0.5 {
+            if let width, abs(width - modelButtonWidth) > 0.5 {
                 modelButtonWidth = width
                 recomputeWrapState(for: draft.text)
             }
@@ -231,10 +248,12 @@ struct AdaptiveComposerView: View {
             isTargeted: $isOuterDropTargeted,
             perform: handleOuterDrop(providers:)
         )
-        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: layoutMode)
-        .animation(.easeInOut(duration: 0.18), value: draft.stagedAttachments.count)
-        .animation(.easeInOut(duration: 0.18), value: draft.isEditing)
-        .animation(.easeInOut(duration: 0.18), value: draft.showsFolderWebFallbackBanner)
+        .animation(LiquidGlassMotion.morph(reduceMotion: reduceMotion), value: layoutMode)
+        .animation(LiquidGlassMotion.morph(reduceMotion: reduceMotion), value: isComposerFrosted)
+        .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: draft.stagedAttachments.count)
+        .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: draft.isEditing)
+        .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: draft.showsFolderWebFallbackBanner)
+        .animation(LiquidGlassMotion.morph(reduceMotion: reduceMotion), value: store.isStreaming)
     }
 
     // MARK: - Top Extras (Editing Banner, Folder Fallback Banner, Attachment Tiles)
@@ -283,10 +302,7 @@ struct AdaptiveComposerView: View {
                     .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(Color.primary.opacity(0.08))
-                    )
+                    .glassCapsule(variant: .clear, interactive: true)
                     .contentShape(Capsule(style: .continuous))
             }
             .buttonStyle(.plain)
@@ -327,18 +343,11 @@ struct AdaptiveComposerView: View {
                 } label: {
                     Text("Open in Web ↗")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(LiquidGlassColors.sendButtonBlue)
-                        )
-                        .contentShape(Capsule(style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .controlSize(.small)
+                .liquidGlassButtonStyle(prominent: true, tint: LiquidGlassColors.sendButtonBlue)
             }
 
             Button {
@@ -397,6 +406,9 @@ struct AdaptiveComposerView: View {
                 onDirectoryDropped: handleDirectoryDropped,
                 onDragTargetingChanged: { targeted in
                     isTextViewDropTargeted = targeted
+                },
+                onFocusChanged: { focused in
+                    isTextViewFocused = focused
                 }
             )
             .frame(height: resolvedTextHeight)
@@ -444,20 +456,17 @@ struct AdaptiveComposerView: View {
                 Label("Upload Folder in Web Mode…", systemImage: "folder.badge.plus")
             }
         } label: {
-            ZStack {
-                Circle()
-                    .fill(
-                        isHoveringPlus
-                            ? LiquidGlassColors.hoverHighlight
-                            : LiquidGlassColors.mutedControlFill
-                    )
-
-                Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Color.primary.opacity(isHoveringPlus ? 0.96 : 0.78))
-            }
-            .frame(width: Self.controlButtonSize, height: Self.controlButtonSize)
-            .contentShape(Circle())
+            Image(systemName: "plus")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Color.primary.opacity(isHoveringPlus ? 0.96 : 0.80))
+                .glassOrb(
+                    size: Self.controlButtonSize,
+                    variant: .clear,
+                    tint: isHoveringPlus ? LiquidGlassColors.hoverHighlight : nil,
+                    interactive: true
+                )
+                .liquidGlassID("composer-plus", in: composerGlassNamespace)
+                .contentShape(Circle())
         }
         // `.button` + `.plain` prevents macOS borderless `NSPopUpButton` from collapsing the 36pt circle and stripping accessibility labels.
         .menuStyle(.button)
@@ -474,23 +483,16 @@ struct AdaptiveComposerView: View {
     }
 
     private var modelPickerTrigger: some View {
-        let isQuickTempActive = quickModeTempBinding?.wrappedValue == true
         let modelTitleMaxWidth: CGFloat = composerWidth < 420 ? 96 : 128
 
         return Button {
             isModelPopoverPresented.toggle()
         } label: {
             HStack(spacing: 4) {
-                if isQuickTempActive {
-                    Circle()
-                        .fill(LiquidGlassColors.tempActiveAccent)
-                        .frame(width: 5, height: 5)
-                }
-
                 Text(selectedModelTitle)
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(
-                        Color.primary.opacity(isHoveringModel || isModelPopoverPresented ? 0.96 : 0.78)
+                        Color.primary.opacity(isHoveringModel || isModelPopoverPresented ? 0.96 : 0.80)
                     )
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -542,12 +544,14 @@ struct AdaptiveComposerView: View {
                     isModelPopoverPresented = false
                 }
             )
+            .environment(\.colorScheme, colorScheme)
         }
     }
 
     private var primaryActionButton: some View {
         let isStreaming = store.isStreaming
         let canSubmit = draft.canSubmit
+        let isActive = canSubmit || isStreaming
 
         return Button {
             if isStreaming {
@@ -559,24 +563,37 @@ struct AdaptiveComposerView: View {
             }
         } label: {
             ZStack {
-                Circle()
-                    .fill(primaryButtonFill(isStreaming: isStreaming, canSubmit: canSubmit))
-
-                if isStreaming {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 11.5, weight: .bold))
-                        .foregroundStyle(LiquidGlassColors.canvasBackground)
-                } else {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 14.5, weight: canSubmit ? .bold : .semibold))
-                        .foregroundStyle(canSubmit ? Color.white : Color.primary.opacity(0.32))
+                if isActive {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    LiquidGlassColors.sendButtonBlue.opacity(isHoveringPrimary ? 0.96 : 0.88),
+                                    LiquidGlassColors.sendButtonBlue.opacity(isHoveringPrimary ? 0.84 : 0.76)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                 }
+
+                Image(systemName: isStreaming ? "stop.fill" : "arrow.up")
+                    .font(.system(size: isStreaming ? 11.5 : 14.5, weight: (isStreaming || canSubmit) ? .bold : .semibold))
+                    .foregroundStyle((isStreaming || canSubmit) ? Color.white : Color.primary.opacity(0.36))
+                    .contentTransition(.symbolEffect(.replace))
             }
-            .frame(width: Self.controlButtonSize, height: Self.controlButtonSize)
+            .glassOrb(
+                size: Self.controlButtonSize,
+                variant: isActive ? .regular : .clear,
+                tint: isActive ? LiquidGlassColors.sendButtonBlue : nil,
+                interactive: isActive
+            )
+            .liquidGlassID("composer-primary", in: composerGlassNamespace)
+            .scaleEffect(isActive && isHoveringPrimary ? 1.03 : 1.0)
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .disabled(!isStreaming && !canSubmit)
+        .disabled(!isActive)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.14)) {
                 isHoveringPrimary = hovering
@@ -584,16 +601,6 @@ struct AdaptiveComposerView: View {
         }
         .help(primaryButtonHelp(isStreaming: isStreaming))
         .accessibilityLabel(primaryButtonAccessibilityLabel(isStreaming: isStreaming))
-    }
-
-    private func primaryButtonFill(isStreaming: Bool, canSubmit: Bool) -> Color {
-        if isStreaming {
-            return Color.primary.opacity(isHoveringPrimary ? 0.94 : 0.84)
-        }
-        if canSubmit {
-            return LiquidGlassColors.sendButtonBlue.opacity(isHoveringPrimary ? 0.88 : 1.0)
-        }
-        return LiquidGlassColors.mutedControlFill
     }
 
     private func primaryButtonHelp(isStreaming: Bool) -> String {
@@ -929,17 +936,21 @@ private nonisolated struct AdaptiveComposerLayout: Layout {
 // MARK: - Preference Keys
 
 private nonisolated struct ComposerWidthPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 548
+    static let defaultValue: CGFloat? = nil
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        if let next = nextValue() {
+            value = next
+        }
     }
 }
 
 private nonisolated struct ModelButtonWidthPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 86
+    static let defaultValue: CGFloat? = nil
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        if let next = nextValue() {
+            value = next
+        }
     }
 }

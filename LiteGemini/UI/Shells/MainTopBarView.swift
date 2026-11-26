@@ -24,6 +24,10 @@ struct MainTopBarView: View {
     @State private var isHoveringNewChat = false
     @State private var isHoveringAvatar = false
 
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var topBarGlassNamespace
+
     private var isCompactWidth: Bool {
         measuredWidth < LiquidGlassMetrics.compactTopBarBreakpoint
     }
@@ -41,22 +45,26 @@ struct MainTopBarView: View {
         ZStack {
             WindowDragArea()
 
-            HStack(spacing: 10) {
-                // Leave bare leading clearance for macOS traffic lights without enclosing them in a pill.
-                Color.clear
-                    .frame(width: LiquidGlassMetrics.trafficLightLeadingInset, height: 1)
-                    .allowsHitTesting(false)
+            LiquidGlassContainer(spacing: 8) {
+                HStack(spacing: 10) {
+                    // Leave bare leading clearance for macOS traffic lights without enclosing them in a pill.
+                    Color.clear
+                        .frame(width: LiquidGlassMetrics.trafficLightLeadingInset, height: 1)
+                        .allowsHitTesting(false)
 
-                recentTriggerButton
+                    recentTriggerButton
 
-                Spacer(minLength: 8)
+                    Spacer(minLength: 8)
 
-                rightActionCluster
+                    rightActionCluster
+                }
+                .padding(.trailing, 12)
             }
-            .padding(.trailing, 12)
         }
         .frame(maxWidth: .infinity)
         .frame(height: LiquidGlassMetrics.topBarHeight)
+        .animation(LiquidGlassMotion.morph(reduceMotion: reduceMotion), value: isCompactWidth)
+        .animation(LiquidGlassMotion.tintShift(reduceMotion: reduceMotion), value: session.isTemporaryChat)
         .background(
             GeometryReader { geometry in
                 Color.clear
@@ -64,7 +72,7 @@ struct MainTopBarView: View {
             }
         )
         .onPreferenceChange(TopBarWidthPreferenceKey.self) { width in
-            if abs(width - measuredWidth) > 0.5 {
+            if let width, abs(width - measuredWidth) > 0.5 {
                 measuredWidth = width
             }
         }
@@ -89,10 +97,13 @@ struct MainTopBarView: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
+            .contentTransition(.symbolEffect(.replace))
             .foregroundStyle(Color.primary.opacity(isHoveringRecent || isRecentPopoverPresented ? 0.96 : 0.84))
             .padding(.horizontal, isCompactWidth ? 9 : 11)
             .frame(height: LiquidGlassMetrics.topBarCapsuleHeight)
-            .glassToolbarButton()
+            .glassToolbarButton(variant: .clear)
+            .liquidGlassID("main-top-recent", in: topBarGlassNamespace)
+            .liquidGlassTransitionMatchedGeometry()
             .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
@@ -107,17 +118,16 @@ struct MainTopBarView: View {
             RecentChatsPopover(store: workspace) {
                 isRecentPopoverPresented = false
             }
+            .environment(\.colorScheme, colorScheme)
         }
     }
 
     // MARK: - Right Cluster
 
     private var rightActionCluster: some View {
-        LiquidGlassContainer(spacing: 8) {
-            HStack(spacing: 8) {
-                pairedActionCapsule
-                accountAvatarButton
-            }
+        HStack(spacing: 8) {
+            pairedActionCapsule
+            accountAvatarButton
         }
     }
 
@@ -133,7 +143,13 @@ struct MainTopBarView: View {
         }
         .padding(.horizontal, 3)
         .frame(height: LiquidGlassMetrics.topBarCapsuleHeight)
-        .glassCapsule()
+        .glassCapsule(
+            variant: .clear,
+            tint: session.isTemporaryChat ? LiquidGlassColors.tempActiveTint : nil,
+            interactive: true
+        )
+        .liquidGlassID("main-top-actions", in: topBarGlassNamespace)
+        .liquidGlassTransitionMatchedGeometry()
     }
 
     /// Icon-only Temporary Chat toggle: signals active state strictly through icon foreground
@@ -215,6 +231,12 @@ struct MainTopBarView: View {
                 account: workspace.activeAccount,
                 size: LiquidGlassMetrics.accountAvatarSize
             )
+            .glassOrb(
+                size: LiquidGlassMetrics.accountAvatarSize,
+                variant: .clear,
+                interactive: true
+            )
+            .liquidGlassID("main-top-avatar", in: topBarGlassNamespace)
             .scaleEffect(isHoveringAvatar ? 1.04 : 1.0)
             .contentShape(Circle())
         }
@@ -234,6 +256,7 @@ struct MainTopBarView: View {
                     isAccountPopoverPresented = false
                 }
             )
+            .environment(\.colorScheme, colorScheme)
         }
     }
 
@@ -258,9 +281,11 @@ struct MainTopBarView: View {
 // MARK: - TopBarWidthPreferenceKey
 
 private nonisolated struct TopBarWidthPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 800
+    static let defaultValue: CGFloat? = nil
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        if let next = nextValue() {
+            value = next
+        }
     }
 }

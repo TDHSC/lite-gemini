@@ -21,7 +21,9 @@ struct ChatSurfaceView<TopBar: View, EmptyState: View, Composer: View>: View {
     @ViewBuilder var emptyState: () -> EmptyState
     @ViewBuilder var composer: () -> Composer
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var measuredComposerHeight: CGFloat = 72
+    @Namespace private var surfaceGlassNamespace
 
     init(
         store: ChatSessionStore,
@@ -56,7 +58,7 @@ struct ChatSurfaceView<TopBar: View, EmptyState: View, Composer: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: isExpanded ? .infinity : nil, alignment: .bottom)
         .onPreferenceChange(ComposerHeightPreferenceKey.self) { height in
-            if height > 0 && abs(height - measuredComposerHeight) > 0.5 {
+            if let height, height > 0 && abs(height - measuredComposerHeight) > 0.5 {
                 measuredComposerHeight = height
             }
         }
@@ -88,24 +90,31 @@ struct ChatSurfaceView<TopBar: View, EmptyState: View, Composer: View>: View {
                 .zIndex(2)
         }
         .overlay(alignment: .bottom) {
-            if let errorMessage = store.lastErrorMessage,
-               !errorMessage.isEmpty,
-               store.challengeBanner == nil {
-                InlineSurfaceErrorBanner(message: errorMessage) {
-                    store.lastErrorMessage = nil
+            LiquidGlassContainer(spacing: 8) {
+                if let errorMessage = store.lastErrorMessage,
+                   !errorMessage.isEmpty,
+                   store.challengeBanner == nil {
+                    InlineSurfaceErrorBanner(message: errorMessage) {
+                        store.lastErrorMessage = nil
+                    }
+                    .liquidGlassID("inline-error-banner", in: surfaceGlassNamespace)
+                    .liquidGlassTransitionMaterialize()
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, measuredComposerHeight + 10)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, measuredComposerHeight + 10)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: store.lastErrorMessage)
+        .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: store.lastErrorMessage)
     }
 
     // MARK: - Constant-Identity Composer Slot
 
     private var composerSlot: some View {
         composer()
+            .frame(maxWidth: 640)
+            .padding(.horizontal, isExpanded ? 14 : 0)
+            .padding(.bottom, isExpanded ? 12 : 0)
+            .frame(maxWidth: .infinity)
             .background(
                 GeometryReader { geometry in
                     Color.clear.preference(
@@ -152,16 +161,18 @@ private struct InlineSurfaceErrorBanner: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: 560)
-        .glassCard(cornerRadius: 12, tint: LiquidGlassColors.warningGlassTint)
+        .glassCard(cornerRadius: 12, variant: .clear, tint: LiquidGlassColors.warningGlassTint)
     }
 }
 
 // MARK: - ComposerHeightPreferenceKey
 
 private nonisolated struct ComposerHeightPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 72
+    static let defaultValue: CGFloat? = nil
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        if let next = nextValue() {
+            value = next
+        }
     }
 }

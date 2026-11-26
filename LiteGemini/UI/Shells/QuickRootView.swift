@@ -10,7 +10,7 @@ import SwiftUI
 struct QuickRootView<Surface: View>: View {
 
     /// Corner radius applied to Quick Mode's `.expanded` Liquid Glass mini-window.
-    static var expandedCornerRadius: CGFloat { 18 }
+    static var expandedCornerRadius: CGFloat { LiquidGlassMetrics.quickExpandedCornerRadius }
 
     @ObservedObject var controller: QuickWorkspaceController
     let onClose: () -> Void
@@ -59,17 +59,27 @@ struct QuickRootView<Surface: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: isExpanded || controller.authState == .signedOut ? .infinity : nil, alignment: .bottom)
         .background(Color.clear)
+        .environment(\.controlActiveState, .key)
     }
 
     // MARK: - Active Surface
 
     private var activeSurfaceContainer: some View {
-        surface(isExpanded)
+        let expandedShape = RoundedRectangle(cornerRadius: Self.expandedCornerRadius, style: .continuous)
+
+        return surface(isExpanded)
             .frame(maxWidth: .infinity, maxHeight: isExpanded ? .infinity : nil, alignment: .bottom)
+            .padding(.horizontal, isExpanded ? 0 : 8)
+            .padding(.vertical, isExpanded ? 0 : 8)
             .background {
                 if isExpanded {
-                    Color.clear
-                        .glassCard(cornerRadius: Self.expandedCornerRadius)
+                    WindowBackdropView()
+                        .clipShape(expandedShape)
+                }
+            }
+            .overlay {
+                if isExpanded {
+                    SpecularGlassRim(shape: expandedShape)
                 }
             }
             .clipShape(
@@ -85,7 +95,7 @@ struct QuickRootView<Surface: View>: View {
                 }
             )
             .onPreferenceChange(QuickBarIntrinsicHeightPreferenceKey.self) { height in
-                guard !isExpanded, height > 0 else {
+                guard !isExpanded, let height, height > 0 else {
                     return
                 }
                 onBarHeightChanged?(height)
@@ -95,7 +105,9 @@ struct QuickRootView<Surface: View>: View {
     // MARK: - Signed-Out Gate
 
     private var signedOutGate: some View {
-        VStack(spacing: 0) {
+        let expandedShape = RoundedRectangle(cornerRadius: Self.expandedCornerRadius, style: .continuous)
+
+        return VStack(spacing: 0) {
             QuickMiniTopBarView(
                 onClose: onClose,
                 onMinimize: onMinimize,
@@ -115,10 +127,13 @@ struct QuickRootView<Surface: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            Color.clear
-                .glassCard(cornerRadius: Self.expandedCornerRadius)
+            WindowBackdropView()
+                .clipShape(expandedShape)
         }
-        .clipShape(RoundedRectangle(cornerRadius: Self.expandedCornerRadius, style: .continuous))
+        .overlay {
+            SpecularGlassRim(shape: expandedShape)
+        }
+        .clipShape(expandedShape)
     }
 }
 
@@ -149,10 +164,12 @@ extension QuickWorkspaceController {
 // MARK: - QuickBarIntrinsicHeightPreferenceKey
 
 private nonisolated struct QuickBarIntrinsicHeightPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = QuickPanelLayout.defaultBarHeight
+    static let defaultValue: CGFloat? = nil
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        if let next = nextValue() {
+            value = next
+        }
     }
 }
 

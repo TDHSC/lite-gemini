@@ -63,10 +63,6 @@ struct ThinkingDisclosureView: View {
             }
         } label: {
             HStack(spacing: 5) {
-                MonochromeSparkShape()
-                    .fill(Color.secondary.opacity(isComplete ? 0.78 : pulseOpacity))
-                    .frame(width: 11, height: 11)
-
                 Text(triggerLabel)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.secondary.opacity(isHoveringTrigger ? 0.98 : 0.85))

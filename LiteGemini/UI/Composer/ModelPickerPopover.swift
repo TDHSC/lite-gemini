@@ -24,6 +24,7 @@ struct ModelPickerPopover: View {
     let onSelectModel: (ModelOption) -> Void
     let onDismiss: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredModelId: String?
     @State private var isHoveringTempSwitch = false
 
@@ -58,6 +59,7 @@ struct ModelPickerPopover: View {
             alignment: .leading
         )
         .fixedSize(horizontal: true, vertical: true)
+        .environment(\.colorScheme, colorScheme)
     }
 
     // MARK: - Header Row
@@ -68,11 +70,13 @@ struct ModelPickerPopover: View {
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
 
             Spacer(minLength: 14)
 
             if let tempBinding = quickModeTempBinding {
                 quickModeTempSwitch(binding: tempBinding)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
         .padding(.horizontal, 11)
@@ -101,6 +105,7 @@ struct ModelPickerPopover: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(isOn ? LiquidGlassColors.tempActiveAccent : Color.secondary)
                     .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
 
                 ZStack(alignment: isOn ? .trailing : .leading) {
                     Capsule(style: .continuous)

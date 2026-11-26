@@ -23,6 +23,9 @@ struct ChatTurnRowView: View {
     var onOpenInWebMode: (() -> Void)? = nil
     var onSaveInlineImage: ((ImageAttachment) -> Void)? = nil
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var turnFooterGlassNamespace
+
     @State private var isHoveringRow = false
     @State private var didCopyResponse = false
     @State private var copyResetTask: Task<Void, Never>?
@@ -108,15 +111,10 @@ struct ChatTurnRowView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(
-                            UnevenRoundedRectangle(
-                                topLeadingRadius: 20,
-                                bottomLeadingRadius: 20,
-                                bottomTrailingRadius: 6,
-                                topTrailingRadius: 20,
-                                style: .continuous
-                            )
-                            .fill(LiquidGlassColors.userBubbleFill)
+                        .glassCard(
+                            cornerRadius: 18,
+                            variant: .clear,
+                            tint: LiquidGlassColors.userBubbleGlassTint
                         )
                 }
             }
@@ -126,36 +124,31 @@ struct ChatTurnRowView: View {
 
     private var userAttachmentChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(turn.userAttachments) { attachment in
-                    HStack(spacing: 5) {
-                        Image(systemName: attachment.isImage ? "photo" : "doc")
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(.secondary)
+            LiquidGlassContainer(spacing: 6) {
+                HStack(spacing: 6) {
+                    ForEach(turn.userAttachments) { attachment in
+                        HStack(spacing: 5) {
+                            Image(systemName: attachment.isImage ? "photo" : "doc")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(.secondary)
 
-                        Text(attachment.filename)
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(Color.primary.opacity(0.86))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(maxWidth: 160, alignment: .leading)
+                            Text(attachment.filename)
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Color.primary.opacity(0.88))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(maxWidth: 160, alignment: .leading)
 
-                        if attachment.byteCount > 0 {
-                            Text(formattedByteCount(attachment.byteCount))
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(.tertiary)
+                            if attachment.byteCount > 0 {
+                                Text(formattedByteCount(attachment.byteCount))
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .glassCapsule(variant: .clear, interactive: true)
                     }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(LiquidGlassColors.userBubbleFill.opacity(0.85))
-                    )
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .strokeBorder(LiquidGlassColors.subtleHairline, lineWidth: LiquidGlassMetrics.hairlineWidth)
-                    )
                 }
             }
         }
@@ -234,30 +227,42 @@ struct ChatTurnRowView: View {
 
     private var unifiedTurnFooter: some View {
         HStack(spacing: 4) {
-            if !turn.assistantMarkdown.isEmpty {
-                TurnFooterIconButton(
-                    systemName: didCopyResponse ? "checkmark" : "doc.on.doc",
-                    tint: didCopyResponse ? Color.green : nil,
-                    helpText: didCopyResponse ? String(localized: "Copied") : String(localized: "Copy"),
-                    action: copyAssistantResponse
-                )
-            }
+            LiquidGlassContainer(spacing: 6) {
+                HStack(spacing: 4) {
+                    if !turn.assistantMarkdown.isEmpty {
+                        TurnFooterIconButton(
+                            systemName: didCopyResponse ? "checkmark" : "doc.on.doc",
+                            tint: didCopyResponse ? Color.green : nil,
+                            helpText: didCopyResponse ? String(localized: "Copied") : String(localized: "Copy"),
+                            action: copyAssistantResponse
+                        )
+                        .liquidGlassID("turn-footer-copy", in: turnFooterGlassNamespace)
+                        .liquidGlassTransitionMaterialize()
+                    }
 
-            if isLatestTurn && canRegenerate {
-                TurnFooterIconButton(
-                    systemName: "arrow.clockwise",
-                    helpText: String(localized: "Regenerate"),
-                    action: { onRegenerate?() }
-                )
-            }
+                    if isLatestTurn && canRegenerate {
+                        TurnFooterIconButton(
+                            systemName: "arrow.clockwise",
+                            helpText: String(localized: "Regenerate"),
+                            action: { onRegenerate?() }
+                        )
+                        .liquidGlassID("turn-footer-regenerate", in: turnFooterGlassNamespace)
+                        .liquidGlassTransitionMaterialize()
+                    }
 
-            if isLatestTurn && canEdit {
-                TurnFooterIconButton(
-                    systemName: "pencil",
-                    helpText: String(localized: "Edit"),
-                    action: { onEdit?() }
-                )
+                    if isLatestTurn && canEdit {
+                        TurnFooterIconButton(
+                            systemName: "pencil",
+                            helpText: String(localized: "Edit"),
+                            action: { onEdit?() }
+                        )
+                        .liquidGlassID("turn-footer-edit", in: turnFooterGlassNamespace)
+                        .liquidGlassTransitionMaterialize()
+                    }
+                }
             }
+            .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: canRegenerate)
+            .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: canEdit)
 
             if !turn.citations.isEmpty {
                 Rectangle()
@@ -270,7 +275,7 @@ struct ChatTurnRowView: View {
 
             Spacer(minLength: 0)
         }
-        .opacity(isHoveringRow || didCopyResponse || !turn.citations.isEmpty ? 1.0 : 0.65)
+        .opacity(isHoveringRow || didCopyResponse || !turn.citations.isEmpty ? 1.0 : 0.72)
     }
 
     // MARK: - Actions & Helpers
@@ -379,13 +384,15 @@ private struct TurnFooterIconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(tint ?? Color.primary.opacity(isHovering ? 0.92 : 0.62))
-                .frame(width: 28, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(isHovering ? LiquidGlassColors.hoverHighlight : Color.clear)
+                .contentTransition(.symbolEffect(.replace))
+                .foregroundStyle(tint ?? Color.primary.opacity(isHovering ? 0.94 : 0.68))
+                .glassOrb(
+                    size: 28,
+                    variant: .clear,
+                    tint: isHovering ? LiquidGlassColors.hoverHighlight : nil,
+                    interactive: true
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -407,9 +414,11 @@ private struct CitationChipsStripView: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(citations) { citation in
-                    CitationChipButton(citation: citation)
+            LiquidGlassContainer(spacing: 6) {
+                HStack(spacing: 6) {
+                    ForEach(citations) { citation in
+                        CitationChipButton(citation: citation)
+                    }
                 }
             }
         }
@@ -441,18 +450,15 @@ private struct CitationChipButton: View {
 
                 Text(labelText)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.primary.opacity(isHovering ? 0.95 : 0.76))
+                    .foregroundStyle(Color.primary.opacity(isHovering ? 0.96 : 0.80))
                     .lineLimit(1)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3.5)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(isHovering ? LiquidGlassColors.hoverHighlight : Color.primary.opacity(0.05))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(LiquidGlassColors.subtleHairline, lineWidth: LiquidGlassMetrics.hairlineWidth)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .glassCapsule(
+                variant: .clear,
+                tint: isHovering ? LiquidGlassColors.hoverHighlight : nil,
+                interactive: true
             )
             .contentShape(Capsule(style: .continuous))
         }

@@ -9,16 +9,21 @@ struct ArtifactFallbackCardView: View {
     let artifact: ArtifactCardInfo
     var onOpenInWebMode: (() -> Void)? = nil
 
-    @State private var isHoveringOpen = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             wideLayout
             compactLayout
         }
+        .environment(\.colorScheme, colorScheme)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .glassCard(cornerRadius: LiquidGlassMetrics.defaultCardCornerRadius)
+        .glassCard(
+            cornerRadius: LiquidGlassMetrics.defaultCardCornerRadius,
+            variant: .clear,
+            tint: LiquidGlassColors.clearCardTint
+        )
     }
 
     // MARK: - Layouts
@@ -95,21 +100,12 @@ struct ArtifactFallbackCardView: View {
         } label: {
             Text("Open in Web ↗")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.primary.opacity(isHoveringOpen ? 0.98 : 0.86))
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .glassCapsule(interactive: true)
-                .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(.plain)
+        .controlSize(.regular)
+        .liquidGlassButtonStyle(prominent: false)
         .disabled(onOpenInWebMode == nil)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.14)) {
-                isHoveringOpen = hovering
-            }
-        }
         .accessibilityLabel(Text("Open in Web ↗"))
     }
 
