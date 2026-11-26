@@ -41,6 +41,76 @@
         }
       }
     },
+    "Account" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "账号"
+          }
+        }
+      }
+    },
+    "Accounts" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "账号"
+          }
+        }
+      }
+    },
+    "Active Account" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前账号"
+          }
+        }
+      }
+    },
+    "Add Another Account…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加其他账号…"
+          }
+        }
+      }
+    },
+    "Add Files or Photos" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加文件或照片"
+          }
+        }
+      }
+    },
+    "Add Files or Photos…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加文件或照片…"
+          }
+        }
+      }
+    },
+    "Add attachment" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加附件"
+          }
+        }
+      }
+    },
     "Advanced" : {
       "localizations" : {
         "zh-Hans" : {
@@ -67,6 +137,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "确定要清除所有浏览数据吗？"
+          }
+        }
+      }
+    },
+    "Ask anything with 120Hz native Liquid Glass." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 120Hz 原生 Liquid Glass 界面中随时提问。"
+          }
+        }
+      }
+    },
+    "Ask anything…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "随便问点什么…"
+          }
+        }
+      }
+    },
+    "Attach" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "附加"
           }
         }
       }
@@ -101,12 +201,32 @@
         }
       }
     },
+    "Canvas" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canvas"
+          }
+        }
+      }
+    },
     "Changes take effect after refreshing (Cmd+R)" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "修改后需要刷新页面 (Cmd+R) 才能生效"
+          }
+        }
+      }
+    },
+    "Chats here aren't saved to local cache or Gemini history." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此处的对话不会保存到本地缓存或 Gemini 历史记录中。"
           }
         }
       }
@@ -191,6 +311,26 @@
         }
       }
     },
+    "Close" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
+    "Close Quick Window" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭快速窗口"
+          }
+        }
+      }
+    },
     "Close Window" : {
       "localizations" : {
         "zh-Hans" : {
@@ -207,6 +347,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭窗口或按 ⌘Q 时，Lite Gemini 会隐藏并移除 Dock 图标，而不是退出。再次打开 Lite Gemini 或按显示/隐藏快捷键即可恢复。"
+          }
+        }
+      }
+    },
+    "Code" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "代码"
+          }
+        }
+      }
+    },
+    "Copied" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制"
+          }
+        }
+      }
+    },
+    "Copy" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制"
+          }
+        }
+      }
+    },
+    "Copy Code" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制代码"
+          }
+        }
+      }
+    },
+    "Deep Research" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "深度研究"
+          }
+        }
+      }
+    },
+    "Default Model" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认模型"
+          }
+        }
+      }
+    },
+    "Dismiss" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
           }
         }
       }
@@ -251,6 +461,16 @@
         }
       }
     },
+    "Editing previous message" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在编辑上一条消息"
+          }
+        }
+      }
+    },
     "Enable Native UI (Experimental)" : {
       "localizations" : {
         "zh-Hans" : {
@@ -261,12 +481,42 @@
         }
       }
     },
+    "Extension" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "扩展程序"
+          }
+        }
+      }
+    },
     "Failed to load. Please check your network connection." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "加载失败，请检查网络连接"
+          }
+        }
+      }
+    },
+    "Folder uploads require Classic Web Mode." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上传文件夹需要切换到经典网页模式。"
+          }
+        }
+      }
+    },
+    "Gem" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gem"
           }
         }
       }
@@ -301,12 +551,42 @@
         }
       }
     },
+    "Google Account" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Google 账号"
+          }
+        }
+      }
+    },
     "Hide to Background" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "隐藏到后台"
+          }
+        }
+      }
+    },
+    "How can I help?" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有什么可以帮你的？"
+          }
+        }
+      }
+    },
+    "Interactive Card" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交互卡片"
           }
         }
       }
@@ -371,6 +651,46 @@
         }
       }
     },
+    "Loading models…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载模型…"
+          }
+        }
+      }
+    },
+    "Math expression" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数学公式"
+          }
+        }
+      }
+    },
+    "Minimize" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最小化"
+          }
+        }
+      }
+    },
+    "Model" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型"
+          }
+        }
+      }
+    },
     "Native Liquid Glass" : {
       "localizations" : {
         "zh-Hans" : {
@@ -411,12 +731,92 @@
         }
       }
     },
+    "New Quick Chat" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建快速对话"
+          }
+        }
+      }
+    },
+    "No Recent Chats" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无最近对话"
+          }
+        }
+      }
+    },
     "None" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "无"
+          }
+        }
+      }
+    },
+    "Not Signed In" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未登录"
+          }
+        }
+      }
+    },
+    "Now" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刚刚"
+          }
+        }
+      }
+    },
+    "Off" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
+    "On" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启"
+          }
+        }
+      }
+    },
+    "Open in Web ↗" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在网页中打开 ↗"
+          }
+        }
+      }
+    },
+    "Pinned" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已置顶"
           }
         }
       }
@@ -431,12 +831,32 @@
         }
       }
     },
+    "Preview Image" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览图片"
+          }
+        }
+      }
+    },
     "Preview of the native Liquid Glass interface. Switch back to Classic Web Mode anytime from the View menu (⌘⇧M)." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "原生 Liquid Glass 界面预览。你可以随时在“显示”菜单 (⌘⇧M) 中切回经典网页模式。"
+          }
+        }
+      }
+    },
+    "Quick Mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速模式"
           }
         }
       }
@@ -451,12 +871,62 @@
         }
       }
     },
+    "Recent" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近"
+          }
+        }
+      }
+    },
+    "Recent Chats" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近对话"
+          }
+        }
+      }
+    },
+    "Recent Quick Chat" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近快速对话"
+          }
+        }
+      }
+    },
     "Record" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "录制"
+          }
+        }
+      }
+    },
+    "Refresh Recent Chats" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刷新最近对话"
+          }
+        }
+      }
+    },
+    "Regenerate" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新生成"
           }
         }
       }
@@ -481,6 +951,26 @@
         }
       }
     },
+    "Remove %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除 %@"
+          }
+        }
+      }
+    },
+    "Remove attachment" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除附件"
+          }
+        }
+      }
+    },
     "Remove cookies, cache and local storage" : {
       "localizations" : {
         "zh-Hans" : {
@@ -497,6 +987,56 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "恢复默认"
+          }
+        }
+      }
+    },
+    "Save" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存"
+          }
+        }
+      }
+    },
+    "Save Image" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存图片"
+          }
+        }
+      }
+    },
+    "Scroll to bottom" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "滚动到底部"
+          }
+        }
+      }
+    },
+    "Select Model" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择模型"
+          }
+        }
+      }
+    },
+    "Send Message" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送消息"
           }
         }
       }
@@ -521,12 +1061,62 @@
         }
       }
     },
+    "Show reasoning" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示思考过程"
+          }
+        }
+      }
+    },
     "Show/Hide Window" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示/隐藏窗口"
+          }
+        }
+      }
+    },
+    "Sign in to Gemini" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "登录 Gemini"
+          }
+        }
+      }
+    },
+    "Sign in with Google" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 Google 账号登录"
+          }
+        }
+      }
+    },
+    "Sign in with Google to sync chats." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 Google 账号登录以同步对话。"
+          }
+        }
+      }
+    },
+    "Sign in with your Google account to use Native Liquid Glass mode, or continue in Classic Web Mode." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请使用 Google 账号登录以启用原生 Liquid Glass 模式，或继续使用经典网页模式。"
           }
         }
       }
@@ -561,12 +1151,82 @@
         }
       }
     },
+    "Temp" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "临时"
+          }
+        }
+      }
+    },
+    "Temporary Chat" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "临时会话"
+          }
+        }
+      }
+    },
+    "Temporary Chat: Off" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "临时会话：关闭"
+          }
+        }
+      }
+    },
+    "Temporary Chat: On" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "临时会话：开启"
+          }
+        }
+      }
+    },
+    "Thinking…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在思考…"
+          }
+        }
+      }
+    },
     "This will remove cookies, cache and local storage. You will need to sign in again." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "这将清除 Cookies、缓存和本地存储数据，清除后需要重新登录。"
+          }
+        }
+      }
+    },
+    "Thought" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已思考"
+          }
+        }
+      }
+    },
+    "Thought for %@s" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已思考 %@ 秒"
           }
         }
       }
@@ -581,6 +1241,46 @@
         }
       }
     },
+    "Unable to load image" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法加载图片"
+          }
+        }
+      }
+    },
+    "Untitled" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未命名"
+          }
+        }
+      }
+    },
+    "Update Message" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新消息"
+          }
+        }
+      }
+    },
+    "Upload Folder in Web Mode…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在网页模式中上传文件夹…"
+          }
+        }
+      }
+    },
     "User-Agent" : {
 
     },
@@ -590,6 +1290,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用原生 Liquid Glass 界面。你可以随时在“显示”菜单 (⌘⇧M) 中切换原生 Liquid Glass 与经典网页模式。"
+          }
+        }
+      }
+    },
+    "Verify in Popup" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在弹窗中验证"
           }
         }
       }
@@ -614,12 +1324,42 @@
         }
       }
     },
+    "Web Mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网页模式"
+          }
+        }
+      }
+    },
     "Window Animation" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "窗口过渡动画"
+          }
+        }
+      }
+    },
+    "Your recent Gemini conversations will appear here." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你最近的 Gemini 对话会显示在这里。"
+          }
+        }
+      }
+    },
+    "Zoom" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缩放"
           }
         }
       }
