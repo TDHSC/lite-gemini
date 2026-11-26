@@ -223,6 +223,8 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
     private(set) var isTemporaryChat: Bool = false
     private(set) var activeChallenge: ChallengeBannerState?
     private(set) var knownAccounts: [AccountScope] = []
+    /// Whether offscreen CSS paint suppression is currently enabled on the underlying `WKWebView`.
+    private(set) var isRenderSuppressed: Bool
 
     // MARK: - Configuration & Internal State
 
@@ -231,6 +233,8 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
     private let requestTimeout: Duration
     private let homeSettleDelay: Duration
     private let redirectGraceDelay: Duration
+    private let renderSuppressor: GeminiRenderSuppressor
+    private var renderSuppressionTask: Task<Void, Never>?
 
     private var latestBootSnapshot: BootAuthSnapshot?
     private var latestPeopleProfile: PeopleProfile?
@@ -272,7 +276,8 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
         customURLSchemeHandlers: [(scheme: String, handler: any WKURLSchemeHandler)] = [],
         requestTimeout: Duration = .seconds(15),
         homeSettleDelay: Duration = .milliseconds(600),
-        redirectGraceDelay: Duration = .milliseconds(350)
+        redirectGraceDelay: Duration = .milliseconds(350),
+        suppressRender: Bool = true
     ) {
         let resolvedBaseURL = baseURL
             ?? URL(string: GeminiBridgeSelectors.Endpoints.appURLString)
@@ -284,6 +289,9 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
         self.requestTimeout = requestTimeout
         self.homeSettleDelay = homeSettleDelay
         self.redirectGraceDelay = redirectGraceDelay
+        let suppressor = GeminiRenderSuppressor(suppressRenderByDefault: suppressRender)
+        self.isRenderSuppressed = suppressRender
+        self.renderSuppressor = suppressor
 
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = websiteDataStore
@@ -324,6 +332,7 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
         configuration.userContentController.addUserScript(themeScript)
 
         configuration.userContentController.addUserScript(GeminiBridgeScript.makeUserScript())
+        suppressor.configureInitialUserScript(on: configuration)
 
         #if DEBUG
         let attachedSpikeSession = GeminiSpikeRecorder.attach(to: configuration)
@@ -375,6 +384,7 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
     isolated deinit {
         homeSettleTask?.cancel()
         conversationRedirectCheckTask?.cancel()
+        renderSuppressionTask?.cancel()
         pendingHomeLoad?.fail(with: ChatTransportError.cancelled)
         pendingConversationLoad?.fail(with: ChatTransportError.cancelled)
         pendingRecentRefresh?.fail(with: ChatTransportError.cancelled)
@@ -579,6 +589,17 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
         webView.load(URLRequest(url: url))
     }
 
+    /// Enables or disables hidden-WebView CSS paint suppression on this engine.
+    ///
+    /// Disabling suppression immediately removes `#lg-native-render-suppressor` and stops
+    /// injecting it on future navigations so Classic Web Mode renders with normal computed styles.
+    func setRenderSuppressed(_ suppressed: Bool) async {
+        renderSuppressionTask?.cancel()
+        renderSuppressionTask = nil
+        isRenderSuppressed = suppressed
+        await renderSuppressor.setSuppressed(suppressed, in: webView)
+    }
+
     // MARK: - WKNavigationDelegate (Completion-Handler Overloads Only)
 
     func webView(
@@ -638,6 +659,7 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        scheduleRenderSuppressionReconcile()
         if let url = webView.url, let challenge = detectChallenge(for: url) {
             handleChallengeEncountered(challenge)
             return
@@ -647,6 +669,7 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        scheduleRenderSuppressionReconcile()
         if let url = webView.url, let challenge = detectChallenge(for: url) {
             handleChallengeEncountered(challenge)
             return
@@ -1701,6 +1724,14 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
             if let error {
                 pending.fail(with: error)
             }
+        }
+    }
+
+    private func scheduleRenderSuppressionReconcile() {
+        renderSuppressionTask?.cancel()
+        renderSuppressionTask = Task { @MainActor [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            await self.renderSuppressor.reconcileNavigation(in: self.webView)
         }
     }
 
