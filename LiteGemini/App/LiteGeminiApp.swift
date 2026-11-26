@@ -257,42 +257,16 @@ final class InterfaceModeHandoffCoordinator: ObservableObject {
 struct LiteGeminiApp: App {
 
     // Persist lifecycle across window hide/reopen transitions.
-    @StateObject private var webViewModel: ClassicWebViewModel
-    @StateObject private var workspaceStore: MainWorkspaceStore
-    @StateObject private var handoffCoordinator: InterfaceModeHandoffCoordinator
+    @StateObject private var appCoordinator = AppCoordinator()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    init() {
-        let webVM = ClassicWebViewModel()
-        let workspace = MainWorkspaceStore(
-            transport: NoopChatTransport(),
-            backgroundTimeoutSeconds: { SettingsManager.shared.backgroundTimeout.seconds },
-            defaultTemporaryChat: { SettingsManager.shared.defaultTemporaryChat }
-        )
-        let coordinator = InterfaceModeHandoffCoordinator(
-            workspace: workspace,
-            currentWebURL: { [weak webVM] in
-                webVM?.webView.url
-            },
-            loadWebURL: { [weak webVM] url in
-                webVM?.webView.load(URLRequest(url: url))
-            },
-            reloadWebView: { [weak webVM] in
-                webVM?.webView.reload()
-            }
-        )
-
-        _webViewModel = StateObject(wrappedValue: webVM)
-        _workspaceStore = StateObject(wrappedValue: workspace)
-        _handoffCoordinator = StateObject(wrappedValue: coordinator)
-    }
 
     var body: some Scene {
         WindowGroup {
             ContentView(
-                viewModel: webViewModel,
-                workspaceStore: workspaceStore,
-                handoffCoordinator: handoffCoordinator
+                viewModel: appCoordinator.classicWebViewModel,
+                workspaceStore: appCoordinator.workspaceStore,
+                handoffCoordinator: appCoordinator.handoffCoordinator,
+                coordinator: appCoordinator
             )
         }
         .windowStyle(.hiddenTitleBar)
@@ -310,7 +284,7 @@ struct LiteGeminiApp: App {
             // Cmd+Shift+N: start a fresh chat in whichever interface mode is active.
             CommandGroup(replacing: .newItem) {
                 Button("New Chat") {
-                    handoffCoordinator.requestNewChat()
+                    appCoordinator.handoffCoordinator.requestNewChat()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             }
@@ -333,18 +307,18 @@ struct LiteGeminiApp: App {
             // Classic Web navigation inside the system View menu.
             CommandGroup(before: .toolbar) {
                 InterfaceModeCommands(
-                    onSwitchToNative: { handoffCoordinator.switchToNativeMode() },
-                    onSwitchToWeb: { handoffCoordinator.switchToWebMode() }
+                    onSwitchToNative: { appCoordinator.handoffCoordinator.switchToNativeMode() },
+                    onSwitchToWeb: { appCoordinator.handoffCoordinator.switchToWebMode() }
                 )
 
                 Button("Reload Page") {
-                    handoffCoordinator.reloadActiveSurface()
+                    appCoordinator.handoffCoordinator.reloadActiveSurface()
                 }
                 .keyboardShortcut("r", modifiers: .command)
 
                 Divider()
 
-                NavigationHistoryCommands(webViewModel: webViewModel)
+                NavigationHistoryCommands(webViewModel: appCoordinator.classicWebViewModel)
 
                 Divider()
             }

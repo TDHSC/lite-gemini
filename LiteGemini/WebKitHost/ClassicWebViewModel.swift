@@ -252,14 +252,16 @@ class ClassicWebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKU
         webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
-    /// When app becomes active, cancel the timer and focus the input field
+    /// When app becomes active, cancel the timer and focus the input field in Classic Web Mode
     @objc private func appDidBecomeActive() {
         backgroundTimeoutTask?.cancel()
         backgroundTimeoutTask = nil
+        guard !settings.isNativeUIActive else { return }
 
         // Delay briefly to ensure the window and WebView are fully ready before focusing
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.focusInput()
+            guard let self, !self.settings.isNativeUIActive else { return }
+            self.focusInput()
         }
     }
 
@@ -273,6 +275,7 @@ class ClassicWebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKU
     /// loading /app when the shortcut has no effect (custom non-Mac User-Agent, or a
     /// Google-side shortcut change)
     @objc private func handleNewChatRequested() {
+        guard !settings.isNativeUIActive else { return }
         // No page yet: load Gemini and stop
         guard let url = webView.url else {
             webView.load(URLRequest(url: Constants.geminiURL))

@@ -87,7 +87,7 @@ final class QuickWorkspaceController: ObservableObject {
 
     private var _transport: (any ChatTransport)?
     private var _session: ChatSessionStore?
-    private var hasScheduledInitialHomeLoad: Bool = false
+    private var hasCompletedInitialHomeLoad: Bool = false
     private var mostRecentQuickWasTemporary: Bool = false
     private var homeLoadGeneration: UInt64 = 0
     private var homeLoadTask: Task<Void, Never>?
@@ -165,8 +165,7 @@ final class QuickWorkspaceController: ObservableObject {
             let desiredTemp = quickModeTempGetter()
             isTemporaryChatPreference = desiredTemp
 
-            if !hasScheduledInitialHomeLoad {
-                hasScheduledInitialHomeLoad = true
+            if !hasCompletedInitialHomeLoad && !isPerformingHomeLoad {
                 scheduleHomeLoad(temporaryChat: desiredTemp)
             }
 
@@ -186,14 +185,13 @@ final class QuickWorkspaceController: ObservableObject {
             isVisible = true
             focusTrigger &+= 1
 
-            hasScheduledInitialHomeLoad = true
             scheduleHomeLoad(temporaryChat: desiredTemp, stopActiveStreamFirst: wasStreaming)
         }
     }
 
     /// Handles the Recent Quick Chat hotkey (`⌥⇧Space`):
     /// - Existing `.expanded` session with turns: re-shows and focuses it immediately.
-    /// - Archived `mostRecentQuickSession`: restores it into `.expanded` phase without touching disk cache.
+    /// - Archived `mostRecentQuickSession`: restores it into `.expanded` phase in 0ms and syncs `/app/<id>`.
     /// - Cold-launch fallback (`mostRecentQuickSession == nil`): automatically falls back to `triggerNewQuickChat()`.
     func triggerRecentQuickChat() {
         if phase == .expanded, let store = _session, store.hasTurns {
@@ -204,15 +202,34 @@ final class QuickWorkspaceController: ObservableObject {
 
         if let recent = mostRecentQuickSession, !recent.turns.isEmpty {
             let (store, _) = ensureSession()
+            let wasTemporary = mostRecentQuickWasTemporary
             cancelPendingHomeLoad()
             store.applySnapshot(recent, persistToCache: false)
-            if mostRecentQuickWasTemporary {
+            if wasTemporary {
                 store.handleTransportEvent(.temporaryChatStateChanged(true))
             }
 
             phase = .expanded
             isVisible = true
             focusTrigger &+= 1
+
+            if !wasTemporary,
+               !recent.conversationId.isEmpty,
+               !recent.conversationId.hasPrefix("quick-"),
+               let transport = _transport {
+                let generation = homeLoadGeneration
+                let authUser = activeAuthUserProvider()
+                homeLoadTask = Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if let refreshed = try? await transport.loadConversation(id: recent.conversationId, authUser: authUser),
+                       !Task.isCancelled,
+                       self.homeLoadGeneration == generation,
+                       self.phase == .expanded,
+                       self._session?.conversationId == recent.conversationId {
+                        self._session?.applySnapshot(refreshed, persistToCache: false)
+                    }
+                }
+            }
             return
         }
 
@@ -296,7 +313,6 @@ final class QuickWorkspaceController: ObservableObject {
         isVisible = true
         focusTrigger &+= 1
 
-        hasScheduledInitialHomeLoad = true
         scheduleHomeLoad(temporaryChat: desiredTemp)
     }
 
@@ -305,11 +321,21 @@ final class QuickWorkspaceController: ObservableObject {
     func setQuickModeTemporaryChat(_ enabled: Bool) async {
         quickModeTempSetter(enabled)
         isTemporaryChatPreference = enabled
-        cancelPendingHomeLoad()
 
-        if let store = _session {
-            await store.setTemporaryChat(enabled)
+        guard let store = _session else {
+            return
         }
+
+        if isPerformingHomeLoad || (!hasCompletedInitialHomeLoad && !store.hasTurns) {
+            store.handleTransportEvent(.temporaryChatStateChanged(enabled))
+            scheduleHomeLoad(temporaryChat: enabled)
+            if let task = homeLoadTask {
+                await task.value
+            }
+            return
+        }
+
+        await store.setTemporaryChat(enabled)
     }
 
     /// Synchronously updates the persisted Quick Mode temporary-chat preference before dispatching
@@ -322,7 +348,7 @@ final class QuickWorkspaceController: ObservableObject {
     /// Resets Quick Mode to a clean signed-out state when browsing data is cleared (`§4 #5`).
     func handleBrowsingDataCleared() {
         cancelPendingHomeLoad()
-        hasScheduledInitialHomeLoad = false
+        hasCompletedInitialHomeLoad = false
         mostRecentQuickSession = nil
         mostRecentQuickWasTemporary = false
         authState = .signedOut
@@ -465,6 +491,7 @@ final class QuickWorkspaceController: ObservableObject {
                 guard !Task.isCancelled, self.homeLoadGeneration == generation else {
                     return
                 }
+                self.hasCompletedInitialHomeLoad = true
                 self.applyHomeLoadResult(result)
             } catch let error as ChatTransportError {
                 guard !Task.isCancelled, self.homeLoadGeneration == generation else {

@@ -15,7 +15,11 @@ struct ContentView: View {
     @ObservedObject var viewModel: ClassicWebViewModel
     @ObservedObject var workspaceStore: MainWorkspaceStore
     @ObservedObject var handoffCoordinator: InterfaceModeHandoffCoordinator
+    var coordinator: AppCoordinator? = nil
     @ObservedObject private var settings = SettingsManager.shared
+
+    /// Focus trigger counter incremented when Main Window activates or starts a new chat.
+    @State private var localComposerFocusTrigger: Int = 0
 
     /// Tracks whether the initial Classic Web page load has completed.
     @State private var hasFinishedInitialLoad: Bool = false
@@ -49,6 +53,14 @@ struct ContentView: View {
             .allowsHitTesting(!settings.isNativeUIActive)
             .accessibilityHidden(settings.isNativeUIActive)
 
+            if settings.enableNativeUI, let coordinator {
+                HiddenSessionWebViewHost(webView: coordinator.mainSessionEngine.webView)
+                    .frame(width: 360, height: 360)
+                    .opacity(0.001)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+
             if settings.isNativeUIActive {
                 MainRootView(
                     workspace: workspaceStore,
@@ -63,10 +75,33 @@ struct ContentView: View {
                         handoffCoordinator.switchToWebMode()
                     }
                 ) {
-                    NativeChatSlotPlaceholder(
-                        workspace: workspaceStore,
-                        onSwitchToWebMode: {
-                            handoffCoordinator.switchToWebMode()
+                    ChatSurfaceView(
+                        store: workspaceStore.session,
+                        isExpanded: true,
+                        topContentInset: LiquidGlassMetrics.topBarHeight,
+                        onOpenInWebMode: { overrideConvId in
+                            handoffCoordinator.switchToWebMode(overrideConversationId: overrideConvId)
+                        },
+                        onSaveInlineImage: { attachment in
+                            coordinator?.saveInlineImage(attachment)
+                        },
+                        topBar: {
+                            EmptyView()
+                        },
+                        emptyState: {
+                            NativeEmptyConversationView(
+                                isTemporaryChat: workspaceStore.session.isTemporaryChat
+                            )
+                        },
+                        composer: {
+                            AdaptiveComposerView(
+                                store: workspaceStore.session,
+                                quickModeTempBinding: nil,
+                                focusTrigger: localComposerFocusTrigger,
+                                onOpenFolderInWebMode: {
+                                    handoffCoordinator.switchToWebMode()
+                                }
+                            )
                         }
                     )
                 }
@@ -88,6 +123,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .newChatRequested)) { _ in
             handoffCoordinator.handleNewChatNotificationInNativeMode()
+            if settings.isNativeUIActive {
+                localComposerFocusTrigger &+= 1
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             if settings.isNativeUIActive {
@@ -97,6 +135,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if settings.isNativeUIActive {
                 workspaceStore.handleAppDidBecomeActive()
+                localComposerFocusTrigger &+= 1
             }
         }
     }
@@ -202,7 +241,9 @@ struct ContentView: View {
     // MARK: - Auth & Challenge Handlers
 
     private func handleSignInAction() {
-        if let url = URL(string: GeminiBridgeSelectors.Endpoints.signInURLString) {
+        if let coordinator {
+            coordinator.handleSignInFromMain()
+        } else if let url = URL(string: GeminiBridgeSelectors.Endpoints.signInURLString) {
             handoffCoordinator.openAuthOrChallengeURL(url)
         } else {
             handoffCoordinator.switchToWebMode()
@@ -210,7 +251,9 @@ struct ContentView: View {
     }
 
     private func handleAddAccountAction() {
-        if let url = URL(string: GeminiBridgeSelectors.Endpoints.addAccountURLString) {
+        if let coordinator {
+            coordinator.handleAddAccountFromMain()
+        } else if let url = URL(string: GeminiBridgeSelectors.Endpoints.addAccountURLString) {
             handoffCoordinator.openAuthOrChallengeURL(url)
         } else {
             handoffCoordinator.switchToWebMode()
@@ -218,79 +261,12 @@ struct ContentView: View {
     }
 
     private func handleVerifyChallengeAction(_ banner: ChallengeBannerState) {
-        let targetURL = banner.challengeURL ?? workspaceStore.urlForWebModeHandoff()
-        handoffCoordinator.openAuthOrChallengeURL(targetURL)
-    }
-}
-
-// MARK: - NativeChatSlotPlaceholder
-
-/// Clean content-slot placeholder rendered inside `MainRootView` until Wave 3 mounts `ChatSurfaceView`.
-private struct NativeChatSlotPlaceholder: View {
-
-    @ObservedObject var workspace: MainWorkspaceStore
-    @ObservedObject private var session: ChatSessionStore
-    let onSwitchToWebMode: () -> Void
-
-    @State private var isHoveringSwitch = false
-
-    init(workspace: MainWorkspaceStore, onSwitchToWebMode: @escaping () -> Void) {
-        self._workspace = ObservedObject(wrappedValue: workspace)
-        self._session = ObservedObject(wrappedValue: workspace.session)
-        self.onSwitchToWebMode = onSwitchToWebMode
-    }
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Spacer(minLength: LiquidGlassMetrics.topBarHeight)
-
-            MonochromeSparkShape()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            session.isTemporaryChat ? LiquidGlassColors.tempActiveAccent : Color.primary.opacity(0.86),
-                            session.isTemporaryChat ? LiquidGlassColors.tempActiveAccent.opacity(0.55) : Color.primary.opacity(0.42)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(width: 24, height: 24)
-                .glassOrb(size: 54, tint: session.isTemporaryChat ? LiquidGlassColors.tempActiveTint : nil, interactive: false)
-
-            VStack(spacing: 6) {
-                Text(session.isTemporaryChat ? LocalizedStringKey("Temporary Chat") : LocalizedStringKey("Native Liquid Glass"))
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.primary.opacity(0.90))
-
-                Text("Preview of the native Liquid Glass interface. Switch back to Classic Web Mode anytime from the View menu (⌘⇧M).")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
-            }
-
-            Button(action: onSwitchToWebMode) {
-                Text("Switch to Classic Web Mode")
-                    .font(.system(size: 12.5, weight: .medium))
-                    .foregroundStyle(Color.primary.opacity(isHoveringSwitch ? 0.96 : 0.84))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 7)
-                    .glassCapsule(interactive: true)
-                    .contentShape(Capsule(style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.14)) {
-                    isHoveringSwitch = hovering
-                }
-            }
-            .padding(.top, 4)
-
-            Spacer(minLength: 24)
+        if let coordinator {
+            coordinator.handleVerifyChallengeFromMain(banner)
+        } else {
+            let targetURL = banner.challengeURL ?? workspaceStore.urlForWebModeHandoff()
+            handoffCoordinator.openAuthOrChallengeURL(targetURL)
         }
-        .padding(.horizontal, 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

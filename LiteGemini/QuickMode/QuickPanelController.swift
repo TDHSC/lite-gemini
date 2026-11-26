@@ -146,15 +146,18 @@ final class QuickFloatingPanel: NSPanel {
 
     /// Whether a sheet, popover, or open panel child window currently owns focus on behalf of this panel.
     var hasBlockingSheetOrChildWindow: Bool {
-        if attachedSheet != nil {
+        if attachedSheet != nil || NSApp.modalWindow != nil {
             return true
         }
         if let childWindows, childWindows.contains(where: { $0.isVisible || $0.isKeyWindow }) {
             return true
         }
+        if NSApp.windows.contains(where: { $0 !== self && ($0 is NSSavePanel) && $0.isVisible }) {
+            return true
+        }
         if let keyWindow = NSApp.keyWindow,
            keyWindow !== self,
-           (keyWindow.parent === self || keyWindow is NSOpenPanel) {
+           (keyWindow.parent === self || keyWindow is NSSavePanel) {
             return true
         }
         return false
@@ -194,7 +197,19 @@ final class QuickFloatingPanel: NSPanel {
         onCloseRequested?()
     }
 
+    override func close() {
+        if let onCloseRequested {
+            onCloseRequested()
+        } else {
+            super.close()
+        }
+    }
+
     override func cancelOperation(_ sender: Any?) {
+        if let textClient = firstResponder as? any NSTextInputClient, textClient.hasMarkedText() {
+            super.cancelOperation(sender)
+            return
+        }
         guard !hasBlockingSheetOrChildWindow else {
             super.cancelOperation(sender)
             return
@@ -651,6 +666,11 @@ final class QuickPanelController {
 
         if phaseChanged || signedOutChanged {
             isZoomed = false
+            if phase == .barOnly,
+               let activeSession = controller.activeSessionIfLoaded,
+               !activeSession.draft.hasUnsentContent {
+                currentBarHeight = QuickPanelLayout.defaultBarHeight
+            }
             let baseFrame = hasPositionedPanel
                 ? presenter.panelFrame
                 : QuickPanelLayout.defaultFrame(

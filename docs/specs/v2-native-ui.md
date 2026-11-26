@@ -1,8 +1,8 @@
 # Spec: Lite Gemini v2 — Native Liquid Glass UI + Hidden WebView Session Bridge
 
-- **Status:** active (`6 / 11` tickets complete)
+- **Status:** active (`9 / 11` tickets complete)
 - **Target release:** `v2.0.0` (developed incrementally on `main` behind a feature flag)
-- **Last updated:** 2026-11-25 (Wave 2 `T04`, `T05`, `T08` complete & wired)
+- **Last updated:** 2026-11-25 (Wave 3 `T06`, `T07`, `T09` complete & wired via `AppCoordinator`)
 
 ---
 
@@ -362,10 +362,10 @@ All three streaming transports carry the **same `StreamGenerateResponse` (`_.uv`
 | **T03** | `Domain` models, `SWRConversationCache` & reusable `ChatSessionStore` | T01 | `done` | `325d8c4` |
 | **T04** | `LiquidGlass` design system, `MainTopBarView` & `View` menu mode handoff | T01, T03 | `done` | `86dc912` |
 | **T05** | Session Bridge Part 1: `GeminiSessionEngine`, auth & read stream parser | T02, T03, T04 | `done` | `ba93627` |
-| **T06** | Shared `ChatSurfaceView`, 120Hz timeline & incremental Markdown renderer | T03, T04 | `pending` | — |
-| **T07** | Shared `AdaptiveComposerView`, compact `ModelPickerPopover` & attachments | T03, T04 | `pending` | — |
+| **T06** | Shared `ChatSurfaceView`, 120Hz timeline & incremental Markdown renderer | T03, T04 | `done` | `c24c214` |
+| **T07** | Shared `AdaptiveComposerView`, compact `ModelPickerPopover` & attachments | T03, T04 | `done` | `631a89e` |
 | **T08** | Session Bridge Part 2: `GeminiActionDriver` write path | T05, T06, T07 | `done` | `2ee988f` |
-| **T09** | Quick Mode (`⌥Space` / `⌥⇧Space`) lazy engine & expandable `NSPanel` | T06, T07, T08 | `pending` | — |
+| **T09** | Quick Mode (`⌥Space` / `⌥⇧Space`) lazy engine & expandable `NSPanel` | T06, T07, T08 | `done` | `068ae7c` |
 | **T10** | Hidden WebView render suppression, polish & localization audit | T08, T09 | `pending` | — |
 | **T11** | End-to-end owner acceptance & `v2.0.0` default flip | T10 | `pending` | — |
 

@@ -73,6 +73,66 @@ final class DownloadManager: NSObject, WKDownloadDelegate {
         download.delegate = self
     }
 
+    /// Downloads an `ImageAttachment` (sharing cookies from the given `WKHTTPCookieStore`) into
+    /// `destinationDirectory`, triggers the Dock Downloads stack bounce, and emits `onNotice`.
+    func saveImageAttachment(
+        _ attachment: ImageAttachment,
+        cookieStore: WKHTTPCookieStore = WKWebsiteDataStore.default().httpCookieStore
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let cookies = await cookieStore.allCookies()
+                let config = URLSessionConfiguration.ephemeral
+                let storage = HTTPCookieStorage()
+                for cookie in cookies {
+                    storage.setCookie(cookie)
+                }
+                config.httpCookieStorage = storage
+                config.httpShouldSetCookies = true
+                let session = URLSession(configuration: config)
+                let (data, _) = try await session.data(from: attachment.url)
+                self.saveRawData(data, suggestedFilename: attachment.suggestedFilename)
+            } catch {
+                let nsError = error as NSError
+                guard nsError.code != NSURLErrorCancelled else { return }
+                self.onNotice?(DownloadNotice(
+                    message: String(localized: "Download failed: \(error.localizedDescription)"),
+                    fileURL: nil,
+                    isError: true
+                ))
+            }
+        }
+    }
+
+    /// Writes raw file data into a collision-free file inside `destinationDirectory` and emits `onNotice`.
+    func saveRawData(_ data: Data, suggestedFilename: String) {
+        let cleaned = suggestedFilename
+            .split(separator: "/").last.map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let name = cleaned.isEmpty ? "gemini-image.png" : cleaned
+        let destination = uniqueDestination(forName: name)
+        do {
+            try data.write(to: destination, options: [.atomic])
+            DistributedNotificationCenter.default().postNotificationName(
+                Notification.Name("com.apple.DownloadFileFinished"),
+                object: destination.path,
+                deliverImmediately: true
+            )
+            onNotice?(DownloadNotice(
+                message: String(localized: "Downloaded \(destination.lastPathComponent)"),
+                fileURL: destination,
+                isError: false
+            ))
+        } catch {
+            onNotice?(DownloadNotice(
+                message: String(localized: "Download failed: \(error.localizedDescription)"),
+                fileURL: nil,
+                isError: true
+            ))
+        }
+    }
+
     // MARK: - WKDownloadDelegate
 
     func download(_ download: WKDownload,
