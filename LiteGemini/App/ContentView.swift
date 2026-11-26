@@ -8,30 +8,34 @@
 import AppKit
 import SwiftUI
 
+// MARK: - ContentView
+
 struct ContentView: View {
+
     @ObservedObject var viewModel: ClassicWebViewModel
+    @ObservedObject var workspaceStore: MainWorkspaceStore
+    @ObservedObject var handoffCoordinator: InterfaceModeHandoffCoordinator
     @ObservedObject private var settings = SettingsManager.shared
 
-    /// Tracks whether the initial page load has completed
+    /// Tracks whether the initial Classic Web page load has completed.
     @State private var hasFinishedInitialLoad: Bool = false
 
-    /// Hover state for the monochrome reload button
+    /// Hover state for the monochrome reload button in Classic Web Mode's error screen.
     @State private var isHoveringReload: Bool = false
 
-    private static let titleBarHeight: CGFloat = 28
+    private static let classicTitleBarHeight: CGFloat = 28
 
     var body: some View {
         ZStack(alignment: .top) {
-            // Seamless backdrop matching the Gemini web page surface color
+            // Seamless backdrop matching the Gemini surface color.
             viewModel.pageBackgroundColor
                 .ignoresSafeArea()
 
             // Keep the underlying WebView mounted across Native ↔ Web mode transitions so
             // sessions and navigation state stay intact without tearing down WebKit.
             VStack(spacing: 0) {
-                // Seamless 28pt top bar that blends with Gemini's background and hosts traffic lights
                 WindowDragArea()
-                    .frame(height: Self.titleBarHeight)
+                    .frame(height: Self.classicTitleBarHeight)
                     .frame(maxWidth: .infinity)
                     .background(viewModel.pageBackgroundColor)
 
@@ -40,240 +44,259 @@ struct ContentView: View {
             }
             .ignoresSafeArea(.container, edges: .top)
             // Small floor that keeps the traffic lights and drag band usable;
-            // about phone width, so Gemini's narrow layout still fits
+            // about phone width, so both Native and Classic narrow layouts fit cleanly.
             .frame(minWidth: 360, minHeight: 400)
             .allowsHitTesting(!settings.isNativeUIActive)
             .accessibilityHidden(settings.isNativeUIActive)
 
             if settings.isNativeUIActive {
-                NativeModePlaceholderView(
-                    backgroundColor: viewModel.pageBackgroundColor,
-                    titleBarHeight: Self.titleBarHeight,
+                MainRootView(
+                    workspace: workspaceStore,
+                    downloadNotice: viewModel.downloadNotice,
+                    onDismissDownloadNotice: {
+                        viewModel.downloadNotice = nil
+                    },
+                    onSignIn: handleSignInAction,
+                    onAddAccount: handleAddAccountAction,
+                    onVerifyChallenge: handleVerifyChallengeAction,
                     onSwitchToWebMode: {
-                        settings.interfaceMode = .web
+                        handoffCoordinator.switchToWebMode()
                     }
-                )
+                ) {
+                    NativeChatSlotPlaceholder(
+                        workspace: workspaceStore,
+                        onSwitchToWebMode: {
+                            handoffCoordinator.switchToWebMode()
+                        }
+                    )
+                }
                 .zIndex(1.8)
             } else {
-                // Minimalist monochrome splash screen for initial load (no error)
-                if !hasFinishedInitialLoad && viewModel.errorMessage == nil {
-                    SplashView(
-                        isLoading: !viewModel.isPageReady,
-                        backgroundColor: viewModel.pageBackgroundColor
-                    )
-                    .ignoresSafeArea()
-                    .zIndex(1)
-                }
-
-                // Ultra-subtle monochrome top hairline indicator for subsequent navigations
-                if hasFinishedInitialLoad && viewModel.isLoading && viewModel.errorMessage == nil {
-                    MonochromeTopLoadingBar()
-                        .padding(.top, Self.titleBarHeight)
-                        .ignoresSafeArea(.container, edges: .top)
-                        .transition(.opacity)
-                }
-
-                // Minimalist monochrome error state
-                if let errorMessage = viewModel.errorMessage {
-                    ZStack {
-                        viewModel.pageBackgroundColor
-                            .ignoresSafeArea()
-
-                        VStack(spacing: 18) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.primary.opacity(0.05))
-                                    .frame(width: 56, height: 56)
-                                    .overlay(
-                                        Circle()
-                                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                                    )
-
-                                Image(systemName: "wifi.exclamationmark")
-                                    .font(.system(size: 22, weight: .light))
-                                    .foregroundStyle(Color.primary.opacity(0.65))
-                            }
-
-                            Text(errorMessage)
-                                .font(.system(size: 13, weight: .regular))
-                                .foregroundStyle(Color.primary.opacity(0.6))
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: 320)
-
-                            Button {
-                                viewModel.retry()
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "arrow.clockwise")
-                                        .font(.system(size: 11, weight: .medium))
-                                    Text("Reload")
-                                        .font(.system(size: 12, weight: .medium))
-                                }
-                                .foregroundStyle(Color.primary.opacity(0.85))
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 7)
-                                .background(
-                                    Capsule()
-                                        .fill(Color.primary.opacity(isHoveringReload ? 0.12 : 0.07))
-                                )
-                                .overlay(
-                                    Capsule()
-                                        .strokeBorder(Color.primary.opacity(isHoveringReload ? 0.24 : 0.14), lineWidth: 1)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .onHover { hovering in
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    isHoveringReload = hovering
-                                }
-                            }
-                            .padding(.top, 2)
-                        }
-                        .padding(32)
-                    }
-                    .zIndex(1.5)
-                }
-            }
-
-            // Monochrome floating capsule notice for downloads
-            if let notice = viewModel.downloadNotice {
-                HStack(spacing: 10) {
-                    Image(systemName: notice.isError
-                          ? "exclamationmark.circle"
-                          : "arrow.down.circle")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(notice.isError ? Color.orange.opacity(0.9) : Color.primary.opacity(0.75))
-
-                    Text(notice.message)
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(Color.primary.opacity(0.88))
-                        .lineLimit(1)
-
-                    if let fileURL = notice.fileURL {
-                        Button("Show in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([fileURL])
-                        }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.primary.opacity(0.9))
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 3)
-                        .background(
-                            Capsule()
-                                .fill(Color.primary.opacity(0.1))
-                        )
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(
-                    Capsule()
-                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
-                )
-                .shadow(color: .black.opacity(0.22), radius: 10, y: 4)
-                .padding(.top, Self.titleBarHeight + 8)
-                .ignoresSafeArea(.container, edges: .top)
-                .task(id: notice.id) {
-                    // Auto-dismiss after 4 s; .task(id:) cancels this when a newer notice replaces it
-                    try? await Task.sleep(for: .seconds(4))
-                    guard !Task.isCancelled else { return }
-                    if viewModel.downloadNotice?.id == notice.id {
-                        viewModel.downloadNotice = nil
-                    }
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(2)
+                classicWebOverlays
             }
         }
         .animation(.easeInOut(duration: 0.25), value: viewModel.downloadNotice?.id)
+        .onChange(of: settings.isNativeUIActive) { _, isNowNative in
+            handoffCoordinator.reconcileExternalNativeUIState(isNowNative)
+        }
         .onChange(of: viewModel.isPageReady) { _, newValue in
-            // Mark initial load as complete once the input field is detected
             if newValue && !hasFinishedInitialLoad && viewModel.errorMessage == nil {
-                // Delay slightly to allow the SplashView fade-out animation to play
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     hasFinishedInitialLoad = true
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .newChatRequested)) { _ in
+            handoffCoordinator.handleNewChatNotificationInNativeMode()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            if settings.isNativeUIActive {
+                workspaceStore.handleAppDidResignActive()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if settings.isNativeUIActive {
+                workspaceStore.handleAppDidBecomeActive()
+            }
+        }
     }
-}
 
-/// Minimal placeholder container displayed when Native UI is enabled prior to T04.
-private struct NativeModePlaceholderView: View {
-    let backgroundColor: Color
-    let titleBarHeight: CGFloat
-    let onSwitchToWebMode: () -> Void
+    // MARK: - Classic Web Overlays
 
-    @State private var isHoveringSwitch = false
+    @ViewBuilder
+    private var classicWebOverlays: some View {
+        // Minimalist monochrome splash screen for initial load (no error).
+        if !hasFinishedInitialLoad && viewModel.errorMessage == nil {
+            SplashView(
+                isLoading: !viewModel.isPageReady,
+                backgroundColor: viewModel.pageBackgroundColor
+            )
+            .ignoresSafeArea()
+            .zIndex(1)
+        }
 
-    var body: some View {
-        ZStack(alignment: .top) {
-            backgroundColor
-                .ignoresSafeArea()
-
-            WindowDragArea()
-                .frame(height: titleBarHeight)
-                .frame(maxWidth: .infinity)
+        // Ultra-subtle monochrome top hairline indicator for subsequent navigations.
+        if hasFinishedInitialLoad && viewModel.isLoading && viewModel.errorMessage == nil {
+            MonochromeTopLoadingBar()
+                .padding(.top, Self.classicTitleBarHeight)
                 .ignoresSafeArea(.container, edges: .top)
+                .transition(.opacity)
+        }
 
-            VStack(spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(Color.primary.opacity(0.05))
-                        .frame(width: 56, height: 56)
-                        .overlay(
-                            Circle()
-                                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                        )
+        // Minimalist monochrome error state.
+        if let errorMessage = viewModel.errorMessage {
+            ZStack {
+                viewModel.pageBackgroundColor
+                    .ignoresSafeArea()
 
-                    MonochromeSparkShape()
-                        .fill(Color.primary.opacity(0.8))
-                        .frame(width: 22, height: 22)
-                }
+                VStack(spacing: 18) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.primary.opacity(0.05))
+                            .frame(width: 56, height: 56)
+                            .overlay(
+                                Circle()
+                                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                            )
 
-                VStack(spacing: 6) {
-                    Text("Native Liquid Glass")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color.primary.opacity(0.9))
+                        Image(systemName: "wifi.exclamationmark")
+                            .font(.system(size: 22, weight: .light))
+                            .foregroundStyle(Color.primary.opacity(0.65))
+                    }
 
-                    Text("Preview of the native Liquid Glass interface. Switch back to Classic Web Mode anytime from the View menu (⌘⇧M).")
-                        .font(.system(size: 12.5))
+                    Text(errorMessage)
+                        .font(.system(size: 13, weight: .regular))
                         .foregroundStyle(Color.primary.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 320)
-                }
 
-                Button(action: onSwitchToWebMode) {
-                    Text("Switch to Classic Web Mode")
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(Color.primary.opacity(0.88))
+                    Button {
+                        viewModel.retry()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 11, weight: .medium))
+                            Text("Reload")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(Color.primary.opacity(0.85))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 7)
                         .background(
                             Capsule()
-                                .fill(Color.primary.opacity(isHoveringSwitch ? 0.12 : 0.07))
+                                .fill(Color.primary.opacity(isHoveringReload ? 0.12 : 0.07))
                         )
                         .overlay(
                             Capsule()
-                                .strokeBorder(Color.primary.opacity(isHoveringSwitch ? 0.24 : 0.14), lineWidth: 1)
+                                .strokeBorder(Color.primary.opacity(isHoveringReload ? 0.24 : 0.14), lineWidth: 1)
                         )
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isHoveringSwitch = hovering
                     }
+                    .buttonStyle(.plain)
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            isHoveringReload = hovering
+                        }
+                    }
+                    .padding(.top, 2)
                 }
-                .padding(.top, 4)
+                .padding(32)
             }
-            .padding(32)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .zIndex(1.5)
         }
+
+        if let notice = viewModel.downloadNotice {
+            DownloadToastView(
+                notice: notice,
+                onDismiss: {
+                    viewModel.downloadNotice = nil
+                }
+            )
+            .padding(.top, Self.classicTitleBarHeight + 8)
+            .padding(.horizontal, 16)
+            .ignoresSafeArea(.container, edges: .top)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .zIndex(2)
+        }
+    }
+
+    // MARK: - Auth & Challenge Handlers
+
+    private func handleSignInAction() {
+        if let url = URL(string: GeminiBridgeSelectors.Endpoints.signInURLString) {
+            handoffCoordinator.openAuthOrChallengeURL(url)
+        } else {
+            handoffCoordinator.switchToWebMode()
+        }
+    }
+
+    private func handleAddAccountAction() {
+        if let url = URL(string: GeminiBridgeSelectors.Endpoints.addAccountURLString) {
+            handoffCoordinator.openAuthOrChallengeURL(url)
+        } else {
+            handoffCoordinator.switchToWebMode()
+        }
+    }
+
+    private func handleVerifyChallengeAction(_ banner: ChallengeBannerState) {
+        let targetURL = banner.challengeURL ?? workspaceStore.urlForWebModeHandoff()
+        handoffCoordinator.openAuthOrChallengeURL(targetURL)
     }
 }
 
-/// Subtle 1.5pt monochrome indeterminate bar for subsequent page loads
+// MARK: - NativeChatSlotPlaceholder
+
+/// Clean content-slot placeholder rendered inside `MainRootView` until Wave 3 mounts `ChatSurfaceView`.
+private struct NativeChatSlotPlaceholder: View {
+
+    @ObservedObject var workspace: MainWorkspaceStore
+    @ObservedObject private var session: ChatSessionStore
+    let onSwitchToWebMode: () -> Void
+
+    @State private var isHoveringSwitch = false
+
+    init(workspace: MainWorkspaceStore, onSwitchToWebMode: @escaping () -> Void) {
+        self._workspace = ObservedObject(wrappedValue: workspace)
+        self._session = ObservedObject(wrappedValue: workspace.session)
+        self.onSwitchToWebMode = onSwitchToWebMode
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer(minLength: LiquidGlassMetrics.topBarHeight)
+
+            MonochromeSparkShape()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            session.isTemporaryChat ? LiquidGlassColors.tempActiveAccent : Color.primary.opacity(0.86),
+                            session.isTemporaryChat ? LiquidGlassColors.tempActiveAccent.opacity(0.55) : Color.primary.opacity(0.42)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .frame(width: 24, height: 24)
+                .glassOrb(size: 54, tint: session.isTemporaryChat ? LiquidGlassColors.tempActiveTint : nil, interactive: false)
+
+            VStack(spacing: 6) {
+                Text(session.isTemporaryChat ? LocalizedStringKey("Temporary Chat") : LocalizedStringKey("Native Liquid Glass"))
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.primary.opacity(0.90))
+
+                Text("Preview of the native Liquid Glass interface. Switch back to Classic Web Mode anytime from the View menu (⌘⇧M).")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
+            }
+
+            Button(action: onSwitchToWebMode) {
+                Text("Switch to Classic Web Mode")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Color.primary.opacity(isHoveringSwitch ? 0.96 : 0.84))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 7)
+                    .glassCapsule(interactive: true)
+                    .contentShape(Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.14)) {
+                    isHoveringSwitch = hovering
+                }
+            }
+            .padding(.top, 4)
+
+            Spacer(minLength: 24)
+        }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - MonochromeTopLoadingBar
+
+/// Subtle 1.5pt monochrome indeterminate bar for subsequent Classic Web Mode page loads.
 private struct MonochromeTopLoadingBar: View {
     @State private var phase: CGFloat = -0.35
 
@@ -310,5 +333,17 @@ private struct MonochromeTopLoadingBar: View {
 }
 
 #Preview {
-    ContentView(viewModel: ClassicWebViewModel())
+    let webVM = ClassicWebViewModel()
+    let workspace = MainWorkspaceStore(transport: NoopChatTransport())
+    let coordinator = InterfaceModeHandoffCoordinator(
+        workspace: workspace,
+        currentWebURL: { nil },
+        loadWebURL: { _ in },
+        reloadWebView: {}
+    )
+    ContentView(
+        viewModel: webVM,
+        workspaceStore: workspace,
+        handoffCoordinator: coordinator
+    )
 }
