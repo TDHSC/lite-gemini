@@ -1,8 +1,8 @@
 # Spec: Lite Gemini v2 — Native Liquid Glass UI + Hidden WebView Session Bridge
 
-- **Status:** active (`0 / 11` tickets complete)
+- **Status:** active (`3 / 11` tickets complete)
 - **Target release:** `v2.0.0` (developed incrementally on `main` behind a feature flag)
-- **Last updated:** 2026-11-25 (updated with locked Liquid Glass UI & Quick Mode spec from interactive prototype)
+- **Last updated:** 2026-11-25 (Wave 1 `T01`–`T03` complete; §5 verified live)
 
 ---
 
@@ -269,29 +269,85 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
 
 ## 5. Verified Gemini Web Protocol Contract
 
-> **Living Section (Populated in T02):** Do **not** hardcode speculative RPC array indices in T05 or T08 before T02 has captured and verified them against live `gemini.google.com`. T02 must fill in every subsection below and replace `TBD (T02)` markers with exact verified details and sanitized fixture shapes.
+> **Verified Live (T02 — 2026-11-25):** Audited against live `https://gemini.google.com/app` build `boq_gemini-web-uiserver_20261125.05_p0` via headless offscreen `WKWebView` captures and static analysis of the live `boq-gemini-web-uiserver` bundle + lazy UI modules. All constants below are centralized in `LiteGemini/Bridge/GeminiBridgeSelectors.swift`.
 
 ### 5.1 Auth & Multi-Account Detection
-- **Signed-in vs signed-out signal:** `TBD (T02)` (e.g., `WIZ_global_data` keys such as `oPEP7c` / email / Gaia ID vs presence of sign-in link).
-- **Active account identity (`accountScope` source, email, avatar URL, `?authuser` index):** `TBD (T02)`
-- **Available signed-in accounts list (or account-chooser discovery mechanism):** `TBD (T02)`
-- **Mid-session challenge / redirect indicators:** Main-frame navigation host != `gemini.google.com`, HTTP `401`/`403`/challenge status on `StreamGenerate`/`batchexecute`, or login/interstitial DOM markers (`TBD (T02)`).
+- **Signed-in vs signed-out signal (`WIZ_global_data` + `batchexecute` + DOM):**
+  - **Primary boot globals (`window.WIZ_global_data`):**
+    - `SNlM0e` (XSRF `at` token): **present non-empty string** when signed in; **absent (`undefined`)** when signed out.
+    - `S06Grb` (numeric Gaia User ID): **non-empty numeric string** when signed in; **`""` (empty string)** when signed out.
+    - `QrtxK` (`authuser` index): **`"0"`, `"1"`, …** when signed in; **`""`** when signed out.
+    - `oPEP7c` (user email, when populated in boot globals): absent when signed out.
+    - `Lz8rbb` (anonymous/signed-out boolean flag) + `M9l3o` / `dSupif` (auxiliary signed-out markers inspected by Gemini's internal auth guard).
+    - Non-PII operational boot keys: `cfb2h` (build label), `FdrFJe` (`f.sid`), `Im6cmf` (`/_/BardChatUi`), `GK6dn` (`https://geminiweb-pa.clients6.google.com`), `d2zJAe` (API key), `h1eoVe` (`https://push.clients6.google.com/upload/`), `TuX5cc` (locale).
+  - **Signed-out DOM markers:** Presence of `a[href*="accounts.google.com/ServiceLogin"]`, top-bar Sign-in `button[jslog^="327170;"]`, sidenav Sign-in `button[jslog^="325776;"]`, or `[data-test-id="sign-out-banner"]` / `mat-card.signed-out`.
+  - **Signed-out RPC confirmation:** `batchexecute?rpcids=otAQ7b` (`GetUserStatus`) returns status code `1016` (`UNAUTHENTICATED`) at JSPB `[14]` (proto field `15`), and `o30O0e` (`GetPeople`) / `CNgdBe` (`ListBots`) return `[["wrb.fr","<id>",null,null,null,[7],"generic"]]` (gRPC `7` = `PERMISSION_DENIED`).
+- **Active account identity (`accountScope` source, email, avatar URL, `?authuser` index):**
+  - **`accountScope` hash input (strictly isolated per §4 #2):** Prefer SHA-256 prefix of `WIZ_global_data["S06Grb"]` (Gaia ID) or lowercased email from `o30O0e` (`InternalPeopleService.GetPeople`) / `WIZ_global_data["oPEP7c"]`. Never read/write `SWRConversationCache` if neither Gaia ID nor email is available.
+  - **Live profile & avatar discovery (`o30O0e`):** On signed-in boot, Gemini issues `POST /_/BardChatUi/data/batchexecute?rpcids=o30O0e`, returning `person = arr[0][2]` with `displayName = person[2][0][0]`, `shortName = person[2][0][3]`, `photoUrl = person[3][0][0]`, and `email = person[9][0][0]`.
+  - **DOM fallback:** `sidenav-mavatar-footer a[gem-open-account-menu]` and `sidenav-mavatar-footer img.mavatar-image` (fallback `user-profile-picture img.user-icon`).
+  - **Active `?authuser` index:** Read from URL query `?authuser=<N>` (or `/u/<N>/` path) reconciled against `WIZ_global_data["QrtxK"]` (defaults to `0` when signed in).
+- **Available signed-in accounts & switching mechanism:**
+  - Switching accounts navigates the hidden `WKWebView` to `https://gemini.google.com/app?authuser=<N>`.
+  - Adding an account opens `https://accounts.google.com/AddSession?continue=https%3A%2F%2Fgemini.google.com%2Fapp` via `PopupCoordinator` / `PopupWindowController`.
+  - Initial sign-in opens `https://accounts.google.com/ServiceLogin?passive=1209600&osid=1&continue=https%3A%2F%2Fgemini.google.com%2Fapp` via the same popup flow.
+  - Known signed-in `AccountScope` profiles discovered across `?authuser=0..N` visits are retained in non-sensitive metadata for instant switching in `AccountPopover`.
+- **Mid-session challenge / redirect indicators:**
+  - Main-frame navigation away from `gemini.google.com` (e.g., `accounts.google.com`, `www.google.com/sorry/index`) or onto `/unavailable`.
+  - HTTP `401` or `403` on `/v1/processSession`, `/v1/conversations:streamGenerate`, `/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate`, or `/_/BardChatUi/data/batchexecute`.
+  - `wrb.fr` / RPC error status `16` (`UNAUTHENTICATED`) or `7` (`PERMISSION_DENIED` on authenticated RPCs), or `GetUserStatus` (`otAQ7b`) status code at `[14]` in `{1016, 1033, 1040, 1054, 1057, 1060}`.
+  - gRPC `5` (`NOT_FOUND`) evicts the missing `conversationId` from `SWRConversationCache`.
 
 ### 5.2 Outbound & Inbound Network Endpoints (Read Path)
-- **Streaming generation endpoint:** `TBD (T02)` (expected `/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate` length-prefixed multi-chunk envelope; verify exact URL pattern, chunk framing, thinking/reasoning field path, markdown body path, canonical `conversationId`/`responseId`/`choiceId` paths, inline image URLs, citation metadata, and Canvas/Deep Research artifact markers).
-- **Conversation load / history turn fetch (`batchexecute` RPC IDs):** `TBD (T02)` (verify RPC IDs used when loading `/app/<conversationId>` and when fetching the Recent Chats list, plus fallback strategy if initial turns are embedded in `AF_initDataCallback` HTML scripts on full page load).
+All three streaming transports carry the **same `StreamGenerateResponse` (`_.uv`) protobuf schema** (1-based protobuf field number `N` corresponds to 0-based JSPB JSON array index `N - 1`).
+
+1. **Streaming Transport A — Primary Live Default (`WebChannel` `ProcessSession` over `XMLHttpRequest`):**
+   - **Endpoint:** `https://geminiweb-pa.clients6.google.com/v1/processSession` (or `/$rpc/assistant.lamda.bard.GeminiWebService/ProcessSession`), downlink `GET ...?VER=8&RID=rpc&...&TYPE=xmlhttp` observed via `XMLHttpRequest` `progress` events.
+   - **Framing:** Length-prefixed WebChannel frames `<charLength>\n[[<seq>,["<base64-encoded-protobuf>"]]]`.
+   - **Protobuf unwrap path to `StreamGenerateResponse` (`_.uv`):** `2 -> 7 -> 1 -> 4 -> 4` (with `2 -> 7 -> 1 -> 1` varint `0`=streaming, `1`=complete).
+2. **Streaming Transport B — SSE (`fetch`):**
+   - **Endpoint:** `POST https://geminiweb-pa.clients6.google.com/v1/conversations:streamGenerate?alt=sse`.
+   - **Framing:** `data: <JSON array>\n\n` where each JSON array is JSPB `StreamGenerateResponse` (`_.uv`).
+3. **Streaming Transport C — Legacy Boq (`fetch`/`XHR`, also used by Temporary Chat fallback):**
+   - **Endpoint:** `POST https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate`.
+   - **Framing:** XSSI prefix `)]}'\n` + length-prefixed `[["wrb.fr",null,"<escaped-inner-json-string>"]]` whose inner JSON array is JSPB `StreamGenerateResponse` (`_.uv`).
+
+- **Verified `StreamGenerateResponse` (`_.uv`) Field Map (`protoField` / `JSPB[protoField - 1]`):**
+  - `conversationId`: `2.1` (`[1][0]`, `"c_..."`); `responseId`: `2.2` (`[1][1]`, `"r_..."`).
+  - `candidates` (`5` / `[4]`): `choiceId` `1` (`[0]`, `"rc_..."`), markdown body `2.1` (`[1][0]`), inline citations `3.1` (`[2][0]`), completion state `9.1` (`[8][0]`: `0`/`2` complete, `1` partial), grounding sources `13.13` (`[12][12]`) / `13.41` (`[12][40]`) / `29` (`[28]`), dynamic view HTML `13.77` (`[12][76]`), Canvas/Deep Research/Immersive artifacts `31` (`[30]`) & `42` (`[41]`), thinking trace `38` (`[37]`: summary `[37][0]`, steps `[37][1]` where each step's markdown body is `[0][0]` and header is `[5]`).
+  - Live thinking status header: `7.6.1` (`[6][5][0]`), active flag `7.4` (`[6][3]`).
+  - Generated chat title: `11.1` (`[10][0]`); stream final flag: `15` (`[14]`).
+  - Structured content & images: `27` (`[26]`) — child field `10` generated images, child field `21` inline web images.
+  - Active model metadata: `40` (`[39]` `modeId`), `43` (`[42]` `modelAttributionName`); temporary chat state echo: `47` (`[46]`: `1` off, `2` on).
+- **`batchexecute` RPCs (`POST /_/BardChatUi/data/batchexecute?rpcids=<ID>`):**
+  - `MaZiqc` (`ListConversations`): `[1]`=`nextPageToken`, `[2]`=conversations (`[0]`=`id`, `[1]`=`title`, `[2]`=`isPinned`, `[3]`=`isHidden`, `[5]`=`[seconds, nanos]`, `[30]`=`isTemporary`).
+  - `hNvQHb` (`ListConversationTurns`): `[0]`=turns (`[0]`=`[conversationId, responseId]`, `[2][0][0]`=user prompt, `[2][4]`=`modeId`, `[3][0]`=candidates using `_.NEb`, `[3][3]`=selected `choiceId`, `[3][9]`=`isFinal`, `[3][12]`=structured content, `[4]`=`[seconds, nanos]`).
+  - `otAQ7b` (`GetUserStatus`): `[14]`=status code (`1000` ok), `[15]`=available models (`[0]`=`modeId`, `[1]`=`title`, `[2]`=`description`, `[11]`=`luminousTitle`, `[12]`=`luminousDescription`).
+  - `o30O0e` (`GetPeople`): `[0][2]` -> `[2][0][0]`=`displayName`, `[3][0][0]`=`photoUrl`, `[9][0][0]`=`email`.
 
 ### 5.3 Hidden Page Action Drivers (Write Path)
-- **Composer editor selector & text injection:** `TBD (T02)` (currently `rich-textarea [contenteditable="true"]` / Quill-like editor; verify reliable programmatic text insertion + input event dispatch).
-- **Submit & Stop Generating triggers:** `TBD (T02)`
-- **Attachment injection (`<input type="file">` / paste `DataTransfer`):** `TBD (T02)`
-- **Model picker discovery & selection trigger:** `TBD (T02)`
-- **Edit latest user turn & Regenerate latest model turn triggers:** `TBD (T02)`
-- **Temporary chat state & toggle:** `<temp-chat-button>` / `.temp-chat-button` with `.temp-chat-on` (verified 2026-10-13; re-confirm in T02).
+- **Composer editor selector & text injection:**
+  - Primary: `rich-textarea .ql-editor[contenteditable="true"]` (excluding `.ql-clipboard`; fallbacks in `GeminiBridgeSelectors.ComposerDOM.editor`).
+  - Injection: `editor.focus()`, `document.execCommand('selectAll', false, null)`, `document.execCommand('insertText', false, text)`, plus `new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text })`.
+- **Submit & Stop Generating triggers (`GeminiBridgeSelectors.ComposerDOM`):**
+  - **Send (Luminous `lr26`):** `input-area-v2 button[jslog^="173899;"]`, fallbacks `mat-icon[fonticon="arrow_upward"]`, legacy `button.send-button` (wait one frame after text insertion).
+  - **Stop (Luminous `lr26`):** `input-area-v2 button[jslog^="188689;"]`, fallbacks `mat-icon[fonticon="stop"]`, legacy `button.stop-button`.
+- **Attachment injection:**
+  - Primary: Construct `DataTransfer` with `File` objects, focus editor, and dispatch synthetic `ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true })`.
+  - Fallback: Click upload trigger (`button[jslog^="300142;"]`), assign `DataTransfer.files` to `images-files-uploader input[type="file"].hidden-file-input`, dispatch `change`.
+  - Gate send until `uploader-file-preview` count matches staged count and `uploader-file-preview mat-progress-spinner` count drops to `0` (15s timeout).
+- **Model picker discovery & selection:**
+  - Read via `otAQ7b` `[15]`; switch by clicking `[data-test-id="bard-mode-menu-button"]`, waiting for `gem-menu[data-test-id="gem-mode-menu"]`, and clicking `gem-menu-item[data-mode-id="<id>"]:not([aria-disabled="true"])`.
+- **Edit latest user turn & Regenerate latest model turn:**
+  - **Edit:** Last `user-query` -> click `[data-test-id="prompt-edit-button"] button` -> replace text in `rich-textarea.edit-rich-textarea .ql-editor[contenteditable="true"]` (fallback `textarea[cdktextareaautosize]`) -> click `.edit-button-area .update-button button`.
+  - **Regenerate:** Last `model-response` -> click `regenerate-button button` (if `.regenerate-menu` opens, click `[data-test-id="regenerate-option"]`).
+- **Temporary chat state & toggle (Luminous + legacy):**
+  - Detect active ON state when either `temp-chat-button` / `.temp-chat-button` has `.temp-chat-on` **OR** `temp-chat-button mat-icon` carries `fonticon="close"` (`data-mat-icon-name="close"`); OFF when `fonticon="gemini_chat_temp"` and no `.temp-chat-on`. Click `temp-chat-button gem-icon-button.temp-chat-button button` (or fallback) only when current state != desired state.
 
 ### 5.4 Bridge Resilience Rules
-- Centralize all CSS selectors, `WIZ_global_data` keys, and `batchexecute` RPC IDs in a single versioned configuration file (`LiteGemini/Bridge/GeminiBridgeSelectors.swift` / JS constants) — never scatter magic strings across views.
-- Every parser function must treat all JSON/array indices defensively (optional bounds-checked lookups, never force-unwrapping). If an unrecognized payload shape arrives, log a structured `os.Logger` `.error` entry under category `GeminiBridge` and surface a non-crashing fallback banner offering **"Open in Web Mode"**.
+- Centralize all CSS selectors, `WIZ_global_data` keys, `batchexecute` RPC IDs, and protobuf/JSPB field indices in `LiteGemini/Bridge/GeminiBridgeSelectors.swift` — never scatter magic strings across views or stores.
+- Every parser function must treat all JSON/array/protobuf lookups defensively (bounds-checked optional decoding, never force-unwrapping). If an unrecognized payload shape arrives, log a structured `os.Logger` `.error` entry under subsystem `io.github.tdhsc.LiteGemini`, category `GeminiBridge` (never logging private prompt/response text or auth tokens), and surface a non-crashing fallback banner offering **"Open in Web Mode"**.
+- Every write-path action driver enforces a bounded timeout (15s) and preserves/rolls back `ComposerDraftState` on selector failure so user input is never lost.
 
 ---
 
@@ -301,9 +357,9 @@ To guarantee zero data corruption or privacy leaks across multi-account, multi-d
 
 | ID | Title | Depends On | Status | Commit |
 |---|---|---|---|---|
-| **T01** | WebKitHost extraction, WebView perf cleanup & v2 feature flag | — | `pending` | — |
-| **T02** | Gemini web protocol & DOM spike (populate §5) | T01 | `pending` | — |
-| **T03** | `Domain` models, `SWRConversationCache` & reusable `ChatSessionStore` | T01 | `pending` | — |
+| **T01** | WebKitHost extraction, WebView perf cleanup & v2 feature flag | — | `done` | `7c10c5f` |
+| **T02** | Gemini web protocol & DOM spike (populate §5) | T01 | `done` | `e98e2ca` |
+| **T03** | `Domain` models, `SWRConversationCache` & reusable `ChatSessionStore` | T01 | `done` | `325d8c4` |
 | **T04** | `LiquidGlass` design system, `MainTopBarView` & `View` menu mode handoff | T01, T03 | `pending` | — |
 | **T05** | Session Bridge Part 1: `GeminiSessionEngine`, auth & read stream parser | T02, T03, T04 | `pending` | — |
 | **T06** | Shared `ChatSurfaceView`, 120Hz timeline & incremental Markdown renderer | T03, T04 | `pending` | — |
