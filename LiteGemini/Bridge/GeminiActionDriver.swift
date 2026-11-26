@@ -1263,3 +1263,77 @@ final class GeminiActionDriver {
     return { clicked: true, selectorIndex: foundBtn.selectorIndex };
     """
 }
+
+// MARK: - GeminiWriteDriving Conformance Adapter
+
+/// Bridges `GeminiActionDriver` and `TemporaryChatController` to `GeminiSessionEngine`'s
+/// `GeminiWriteDriving` protocol.
+@MainActor
+final class DefaultGeminiWriteDriver: GeminiWriteDriving {
+
+    let actionDriver: GeminiActionDriver
+    private weak var temporaryChatController: TemporaryChatController?
+
+    init(
+        actionDriver: GeminiActionDriver = GeminiActionDriver(),
+        temporaryChatController: TemporaryChatController? = nil
+    ) {
+        self.actionDriver = actionDriver
+        self.temporaryChatController = temporaryChatController
+    }
+
+    func submitPrompt(
+        in webView: WKWebView,
+        text: String,
+        attachments: [StagedAttachment],
+        modelId: String?,
+        isTemporaryChat: Bool
+    ) async throws {
+        if let temporaryChatController,
+           let currentTemp = await temporaryChatController.readState(),
+           currentTemp != isTemporaryChat {
+            try await temporaryChatController.setTemporaryChat(
+                isTemporaryChat,
+                reason: "submitPrompt",
+                timeout: actionDriver.timeout
+            )
+        }
+        if let modelId, !modelId.isEmpty {
+            try? await actionDriver.selectModel(id: modelId, in: webView)
+        }
+        try await actionDriver.submitPrompt(text: text, attachments: attachments, in: webView)
+    }
+
+    func stopStreaming(in webView: WKWebView) async {
+        _ = await actionDriver.stopGenerating(in: webView)
+    }
+
+    func editLastTurn(in webView: WKWebView, newText: String) async throws {
+        try await actionDriver.editLatestTurn(newText: newText, in: webView)
+    }
+
+    func regenerateLastTurn(in webView: WKWebView) async throws {
+        try await actionDriver.regenerateLatestTurn(in: webView)
+    }
+
+    func selectModel(in webView: WKWebView, id: String) async throws {
+        try await actionDriver.selectModel(id: id, in: webView)
+    }
+
+    func setTemporaryChat(in webView: WKWebView, enabled: Bool) async throws {
+        if let temporaryChatController {
+            try await temporaryChatController.setTemporaryChat(
+                enabled,
+                reason: "nativeToggle",
+                timeout: actionDriver.timeout
+            )
+        } else {
+            let tempController = TemporaryChatController(webView: webView)
+            try await tempController.setTemporaryChat(
+                enabled,
+                reason: "nativeToggle",
+                timeout: actionDriver.timeout
+            )
+        }
+    }
+}

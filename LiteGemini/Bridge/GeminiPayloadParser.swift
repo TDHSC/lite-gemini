@@ -619,7 +619,7 @@ nonisolated struct WebChannelStreamBuffer: Sendable {
     /// Flushes any trailing unframed line when the stream ends.
     mutating func finish() -> [ParsedStreamFrame] {
         var frames = drainCompleteFrames()
-        let remaining = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let remaining = GeminiPayloadParser.stripLeadingLengthLine(buffer).trimmingCharacters(in: .whitespacesAndNewlines)
         buffer = ""
         if !remaining.isEmpty, remaining.hasPrefix("[") {
             frames.append(contentsOf: GeminiPayloadParser.decodeWebChannelFrameJSON(remaining))
@@ -724,7 +724,7 @@ nonisolated struct LegacyBoqStreamBuffer: Sendable {
     mutating func finish() -> [StreamParseOutput] {
         stripXSSIIfNeeded()
         var outputs = drainCompleteFrames()
-        let remaining = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        let remaining = GeminiPayloadParser.stripLeadingLengthLine(buffer).trimmingCharacters(in: .whitespacesAndNewlines)
         buffer = ""
         if !remaining.isEmpty, remaining.hasPrefix("[") {
             outputs.append(contentsOf: GeminiPayloadParser.decodeLegacyBoqChunk(remaining))
@@ -845,6 +845,19 @@ nonisolated enum GeminiPayloadParser {
         for turnPayload in turnPayloads {
             let turnComplete = (turnPayload.firstVarint(1) == 1)
             let responseMessages = turnPayload.submessages(along: responseTailPath)
+            if responseMessages.isEmpty, turnComplete {
+                let turnResponseId = nonEmptyTrimmed(turnPayload.firstSubmessage(2)?.firstString(1))
+                frames.append(
+                    ParsedStreamFrame(
+                        delta: StreamingDelta(
+                            responseId: turnResponseId,
+                            isThinkingComplete: true,
+                            isFinal: true
+                        )
+                    )
+                )
+                continue
+            }
             for responseMessage in responseMessages {
                 if let frame = parseStreamGenerateResponse(proto: responseMessage, forceFinal: turnComplete) {
                     frames.append(frame)
@@ -1046,11 +1059,24 @@ nonisolated enum GeminiPayloadParser {
             frames.append(contentsOf: decodeWrbFrames(from: chunk))
         }
 
-        let trailing = remaining.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trailing = stripLeadingLengthLine(remaining).trimmingCharacters(in: .whitespacesAndNewlines)
         if !trailing.isEmpty, trailing.hasPrefix("[") {
             frames.append(contentsOf: decodeWrbFrames(from: trailing))
         }
         return frames
+    }
+
+    /// Strips a leading `<digits>\n` length-prefix line if present on an incomplete EOF buffer.
+    static func stripLeadingLengthLine(_ input: String) -> String {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let newlineIdx = trimmed.firstIndex(of: "\n") else {
+            return trimmed
+        }
+        let header = trimmed[..<newlineIdx].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !header.isEmpty, header.allSatisfy(\.isNumber) else {
+            return trimmed
+        }
+        return String(trimmed[trimmed.index(after: newlineIdx)...])
     }
 
     /// Maps a `batchexecute` gRPC error kind to a structured `ChatTransportError`.

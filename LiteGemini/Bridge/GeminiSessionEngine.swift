@@ -366,6 +366,10 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
         self.downloadManager.onNotice = { [weak self] notice in
             self?.onDownloadNotice?(notice)
         }
+        self.writeDriver = DefaultGeminiWriteDriver(
+            actionDriver: GeminiActionDriver(timeout: requestTimeout),
+            temporaryChatController: self.temporaryChatController
+        )
     }
 
     isolated deinit {
@@ -932,8 +936,15 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
             }
 
             if result.isUnauthenticated {
-                recomputeAuthStateAndEmit()
-                evaluateHomeLoadCompletion()
+                if pendingHomeLoad != nil && !authState.isSignedIn {
+                    recomputeAuthStateAndEmit()
+                    evaluateHomeLoadCompletion()
+                } else if let challenge = result.challenge {
+                    handleChallengeEncountered(challenge)
+                } else {
+                    recomputeAuthStateAndEmit()
+                    evaluateHomeLoadCompletion()
+                }
             } else if let challenge = result.challenge {
                 handleChallengeEncountered(challenge)
             } else {
@@ -1027,7 +1038,11 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
         if streamBuffers[requestId] == nil {
             streamBuffers[requestId] = makeStreamBuffer(for: transport)
         }
-        if let active = activeStreamSession,
+        // Do not eagerly bind `.processSession` on `streamStart`: short-lived uplink `POST /v1/processSession`
+        // requests carry zero downlink frames and would prematurely close the session on `loadend`.
+        // `.processSession` requests bind lazily in `processStreamOutputs` on the first decoded `ParsedStreamFrame`.
+        if transport != .processSession,
+           let active = activeStreamSession,
            active.boundRequestId == nil,
            !active.preexistingRequestIds.contains(requestId) {
             activeStreamSession?.boundRequestId = requestId
@@ -1081,27 +1096,36 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
             processStreamOutputs(trailingOutputs, requestId: requestId)
         }
 
+        let transport = payload["transport"]?.stringValue.flatMap(GeminiBridgeScript.TransportKind.init(rawValue:))
         if let active = activeStreamSession,
-           shouldTerminateActiveStream(active, forRequestId: requestId) {
+           shouldTerminateActiveStream(active, forRequestId: requestId, transport: transport) {
             finishActiveStream(throwing: nil)
         }
     }
 
     private func handleStreamErrorMessage(_ payload: JSONValue) {
         let requestId = payload["requestId"]?.nonEmptyStringValue
+        let transport = payload["transport"]?.stringValue.flatMap(GeminiBridgeScript.TransportKind.init(rawValue:))
         if let requestId {
             streamBuffers.removeValue(forKey: requestId)
         }
         let message = payload["message"]?.nonEmptyStringValue ?? "Stream connection failed."
         if let active = activeStreamSession,
-           requestId.map({ shouldTerminateActiveStream(active, forRequestId: $0) }) ?? true {
+           requestId.map({ shouldTerminateActiveStream(active, forRequestId: $0, transport: transport) }) ?? true {
             finishActiveStream(throwing: ChatTransportError.networkError(message: message))
         }
     }
 
-    private func shouldTerminateActiveStream(_ session: ActiveStreamSession, forRequestId requestId: String) -> Bool {
+    private func shouldTerminateActiveStream(
+        _ session: ActiveStreamSession,
+        forRequestId requestId: String,
+        transport: GeminiBridgeScript.TransportKind?
+    ) -> Bool {
         if let bound = session.boundRequestId {
             return bound == requestId
+        }
+        if transport == .processSession {
+            return false
         }
         return !session.preexistingRequestIds.contains(requestId)
     }
