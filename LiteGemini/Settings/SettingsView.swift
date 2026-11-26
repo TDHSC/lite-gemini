@@ -163,9 +163,33 @@ struct SettingsView: View {
                     defaultHotKey: .newChatDefaultHotKey
                 )
             } footer: {
-                Text("Click a shortcut capsule to record a new key combination, or press Esc to cancel.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if !settings.enableNativeUI {
+                    Text("Click a shortcut capsule to record a new key combination, or press Esc to cancel.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if settings.enableNativeUI {
+                Section {
+                    HotKeyRecorderView(
+                        label: "New Quick Chat",
+                        hotKey: $settings.quickNewHotKey,
+                        defaultHotKey: .quickNewDefaultHotKey
+                    )
+
+                    HotKeyRecorderView(
+                        label: "Recent Quick Chat",
+                        hotKey: $settings.quickRecentHotKey,
+                        defaultHotKey: .quickRecentDefaultHotKey
+                    )
+                } header: {
+                    Text("Quick Mode")
+                } footer: {
+                    Text("Click a shortcut capsule to record a new key combination, or press Esc to cancel.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

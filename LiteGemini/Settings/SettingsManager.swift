@@ -4,7 +4,7 @@ import Carbon
 import ServiceManagement
 
 /// Custom global hotkey, stores Carbon keyCode and modifiers
-struct CustomHotKey: Codable, Equatable {
+nonisolated struct CustomHotKey: Codable, Equatable, Sendable {
     /// Carbon virtual key code
     var keyCode: UInt32
     /// Carbon modifier mask (controlKey / optionKey / cmdKey / shiftKey)
@@ -20,6 +20,18 @@ struct CustomHotKey: Codable, Equatable {
     static let newChatDefaultHotKey = CustomHotKey(
         keyCode: UInt32(kVK_ANSI_N),
         modifiers: UInt32(cmdKey | shiftKey)
+    )
+
+    /// Default Quick Mode new-chat hotkey: Option + Space (`⌥Space`)
+    static let quickNewDefaultHotKey = CustomHotKey(
+        keyCode: UInt32(kVK_Space),
+        modifiers: UInt32(optionKey)
+    )
+
+    /// Default Quick Mode recent-chat hotkey: Option + Shift + Space (`⌥⇧Space`)
+    static let quickRecentDefaultHotKey = CustomHotKey(
+        keyCode: UInt32(kVK_Space),
+        modifiers: UInt32(optionKey | shiftKey)
     )
 
     /// Validation: requires at least one modifier key + one regular key
@@ -206,8 +218,11 @@ class SettingsManager: ObservableObject {
         static let alwaysOnTop = false
         static let customHotKey: CustomHotKey? = CustomHotKey.defaultHotKey
         static let newChatHotKey: CustomHotKey? = CustomHotKey.newChatDefaultHotKey
+        static let quickNewHotKey: CustomHotKey? = CustomHotKey.quickNewDefaultHotKey
+        static let quickRecentHotKey: CustomHotKey? = CustomHotKey.quickRecentDefaultHotKey
         static let windowAnimation = true
         static let defaultTemporaryChat = false
+        static let quickModeTemporaryChat = false
         static let enableNativeUI = false
         static let interfaceMode = InterfaceMode.native
     }
@@ -221,10 +236,13 @@ class SettingsManager: ObservableObject {
         static let alwaysOnTop = "alwaysOnTop"
         static let customHotKey = "customHotKey"
         static let newChatHotKey = "newChatHotKey"
+        static let quickNewHotKey = "quickNewHotKey"
+        static let quickRecentHotKey = "quickRecentHotKey"
         static let legacyHotKeyPreset = "hotKeyPreset"
         static let language = "appLanguage"
         static let windowAnimation = "windowAnimation"
         static let defaultTemporaryChat = "defaultTemporaryChat"
+        static let quickModeTemporaryChat = "quickModeTemporaryChat"
         static let keepRunningInBackground = "keepRunningInBackground"
         static let enableNativeUI = "enableNativeUI"
         static let interfaceMode = "interfaceMode"
@@ -294,6 +312,36 @@ class SettingsManager: ObservableObject {
         }
     }
 
+    /// Quick Mode new-chat global hotkey (default `⌥Space`; nil means disabled)
+    @Published var quickNewHotKey: CustomHotKey? {
+        didSet {
+            if let hotKey = quickNewHotKey {
+                if let data = try? JSONEncoder().encode(hotKey) {
+                    UserDefaults.standard.set(data, forKey: Keys.quickNewHotKey)
+                }
+            } else {
+                // Store empty Data to mark "cleared", distinct from "never set"
+                UserDefaults.standard.set(Data(), forKey: Keys.quickNewHotKey)
+            }
+            HotKeyManager.shared.reRegister()
+        }
+    }
+
+    /// Quick Mode recent-chat global hotkey (default `⌥⇧Space`; nil means disabled)
+    @Published var quickRecentHotKey: CustomHotKey? {
+        didSet {
+            if let hotKey = quickRecentHotKey {
+                if let data = try? JSONEncoder().encode(hotKey) {
+                    UserDefaults.standard.set(data, forKey: Keys.quickRecentHotKey)
+                }
+            } else {
+                // Store empty Data to mark "cleared", distinct from "never set"
+                UserDefaults.standard.set(Data(), forKey: Keys.quickRecentHotKey)
+            }
+            HotKeyManager.shared.reRegister()
+        }
+    }
+
     /// App language override
     @Published var language: AppLanguage {
         didSet {
@@ -312,6 +360,11 @@ class SettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(defaultTemporaryChat, forKey: Keys.defaultTemporaryChat) }
     }
 
+    /// Persisted Quick Mode temporary-chat switch remembered across sessions and launches
+    @Published var quickModeTemporaryChat: Bool {
+        didSet { UserDefaults.standard.set(quickModeTemporaryChat, forKey: Keys.quickModeTemporaryChat) }
+    }
+
     /// Closing the window or pressing Cmd+Q hides the app and its Dock icon instead of quitting
     @Published var keepRunningInBackground: Bool {
         didSet { UserDefaults.standard.set(keepRunningInBackground, forKey: Keys.keepRunningInBackground) }
@@ -319,7 +372,10 @@ class SettingsManager: ObservableObject {
 
     /// Experimental feature flag enabling the v2 native Liquid Glass interface
     @Published var enableNativeUI: Bool {
-        didSet { UserDefaults.standard.set(enableNativeUI, forKey: Keys.enableNativeUI) }
+        didSet {
+            UserDefaults.standard.set(enableNativeUI, forKey: Keys.enableNativeUI)
+            HotKeyManager.shared.reRegister()
+        }
     }
 
     /// Active interface presentation mode when `enableNativeUI` is enabled
@@ -405,6 +461,32 @@ class SettingsManager: ObservableObject {
             self.newChatHotKey = Defaults.newChatHotKey
         }
 
+        // Read Quick Mode new-chat hotkey
+        if let data = defaults.data(forKey: Keys.quickNewHotKey) {
+            if data.isEmpty {
+                self.quickNewHotKey = nil
+            } else if let hotKey = try? JSONDecoder().decode(CustomHotKey.self, from: data) {
+                self.quickNewHotKey = hotKey
+            } else {
+                self.quickNewHotKey = Defaults.quickNewHotKey
+            }
+        } else {
+            self.quickNewHotKey = Defaults.quickNewHotKey
+        }
+
+        // Read Quick Mode recent-chat hotkey
+        if let data = defaults.data(forKey: Keys.quickRecentHotKey) {
+            if data.isEmpty {
+                self.quickRecentHotKey = nil
+            } else if let hotKey = try? JSONDecoder().decode(CustomHotKey.self, from: data) {
+                self.quickRecentHotKey = hotKey
+            } else {
+                self.quickRecentHotKey = Defaults.quickRecentHotKey
+            }
+        } else {
+            self.quickRecentHotKey = Defaults.quickRecentHotKey
+        }
+
         // windowAnimation defaults to true; only read if user has explicitly set it
         if defaults.object(forKey: Keys.windowAnimation) != nil {
             self.windowAnimation = defaults.bool(forKey: Keys.windowAnimation)
@@ -417,6 +499,13 @@ class SettingsManager: ObservableObject {
             self.defaultTemporaryChat = defaults.bool(forKey: Keys.defaultTemporaryChat)
         } else {
             self.defaultTemporaryChat = Defaults.defaultTemporaryChat
+        }
+
+        // quickModeTemporaryChat defaults to false; persisted independently from main window
+        if defaults.object(forKey: Keys.quickModeTemporaryChat) != nil {
+            self.quickModeTemporaryChat = defaults.bool(forKey: Keys.quickModeTemporaryChat)
+        } else {
+            self.quickModeTemporaryChat = Defaults.quickModeTemporaryChat
         }
 
         // enableNativeUI defaults to false until v2.0 acceptance
@@ -467,10 +556,10 @@ class SettingsManager: ObservableObject {
         }
     }
 
-    /// Update window level
+    /// Update window level (skip floating NSPanels such as Quick Mode which stay floating)
     func updateWindowLevel() {
         DispatchQueue.main.async {
-            for window in NSApp.windows where window.canBecomeKey {
+            for window in NSApp.windows where window.canBecomeKey && !((window as? NSPanel)?.isFloatingPanel ?? false) {
                 window.level = self.alwaysOnTop ? .floating : .normal
             }
         }

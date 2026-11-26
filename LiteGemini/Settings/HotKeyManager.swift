@@ -5,6 +5,8 @@ import Carbon
 private enum HotKeyIDs {
     static let showHide: UInt32 = 1
     static let newChat: UInt32 = 2
+    static let quickNew: UInt32 = 3
+    static let quickRecent: UInt32 = 4
     static let signature: OSType = OSType(0x53574654)
 }
 
@@ -32,6 +34,10 @@ nonisolated private func hotKeyHandler(nextHandler: EventHandlerCallRef?, event:
             HotKeyManager.shared.onHotKeyPressed()
         case HotKeyIDs.newChat:
             HotKeyManager.shared.onNewChatHotKeyPressed()
+        case HotKeyIDs.quickNew:
+            HotKeyManager.shared.onQuickNewHotKeyPressed()
+        case HotKeyIDs.quickRecent:
+            HotKeyManager.shared.onQuickRecentHotKeyPressed()
         default:
             break
         }
@@ -43,26 +49,40 @@ class HotKeyManager {
     static let shared = HotKeyManager()
     private var hotKeyRef: EventHotKeyRef?
     private var newChatHotKeyRef: EventHotKeyRef?
+    private var quickNewHotKeyRef: EventHotKeyRef?
+    private var quickRecentHotKeyRef: EventHotKeyRef?
     /// Event handler only needs to be installed once
     private var handlerInstalled = false
 
+    /// Handler invoked when the New Quick Chat global hotkey (`⌥Space`) fires while Native UI is enabled.
+    @MainActor var onQuickNewHotKey: (@MainActor () -> Void)?
+
+    /// Handler invoked when the Recent Quick Chat global hotkey (`⌥⇧Space`) fires while Native UI is enabled.
+    @MainActor var onQuickRecentHotKey: (@MainActor () -> Void)?
+
     private init() {}
-    
-    /// Register hotkey on initial launch
+
+    /// Register hotkeys on initial launch
     func register() {
         installHandlerIfNeeded()
         registerCurrentHotKey()
         registerNewChatHotKey()
+        registerQuickNewHotKey()
+        registerQuickRecentHotKey()
     }
 
-    /// Re-register hotkey (called when settings change)
+    /// Re-register hotkeys (called when settings change)
     /// - Parameter enabled: when false, only unregister without re-registering (recording mode)
     func reRegister(enabled: Bool = true) {
         unregisterHotKey()
         unregisterNewChatHotKey()
+        unregisterQuickNewHotKey()
+        unregisterQuickRecentHotKey()
         if enabled {
             registerCurrentHotKey()
             registerNewChatHotKey()
+            registerQuickNewHotKey()
+            registerQuickRecentHotKey()
         }
     }
 
@@ -130,6 +150,60 @@ class HotKeyManager {
         }
     }
 
+    /// Register Quick Mode new-chat hotkey based on current settings
+    private func registerQuickNewHotKey() {
+        guard SettingsManager.shared.enableNativeUI else {
+            return
+        }
+        guard let hotKey = SettingsManager.shared.quickNewHotKey else {
+            print("Quick Mode new-chat hotkey disabled, skipping registration")
+            return
+        }
+        let hotKeyID = EventHotKeyID(signature: HotKeyIDs.signature, id: HotKeyIDs.quickNew)
+
+        let regStatus = RegisterEventHotKey(
+            hotKey.keyCode,
+            hotKey.modifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &quickNewHotKeyRef
+        )
+
+        if regStatus != noErr {
+            print("Failed to register Quick Mode new-chat hotkey: \(regStatus)")
+        } else {
+            print("Quick Mode new-chat hotkey \(hotKey.displayName) registered successfully")
+        }
+    }
+
+    /// Register Quick Mode recent-chat hotkey based on current settings
+    private func registerQuickRecentHotKey() {
+        guard SettingsManager.shared.enableNativeUI else {
+            return
+        }
+        guard let hotKey = SettingsManager.shared.quickRecentHotKey else {
+            print("Quick Mode recent-chat hotkey disabled, skipping registration")
+            return
+        }
+        let hotKeyID = EventHotKeyID(signature: HotKeyIDs.signature, id: HotKeyIDs.quickRecent)
+
+        let regStatus = RegisterEventHotKey(
+            hotKey.keyCode,
+            hotKey.modifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &quickRecentHotKeyRef
+        )
+
+        if regStatus != noErr {
+            print("Failed to register Quick Mode recent-chat hotkey: \(regStatus)")
+        } else {
+            print("Quick Mode recent-chat hotkey \(hotKey.displayName) registered successfully")
+        }
+    }
+
     /// Unregister the show/hide hotkey
     private func unregisterHotKey() {
         if let ref = hotKeyRef {
@@ -145,7 +219,25 @@ class HotKeyManager {
             newChatHotKeyRef = nil
         }
     }
-    
+
+    /// Unregister the Quick Mode new-chat hotkey
+    private func unregisterQuickNewHotKey() {
+        if let ref = quickNewHotKeyRef {
+            UnregisterEventHotKey(ref)
+            quickNewHotKeyRef = nil
+        }
+    }
+
+    /// Unregister the Quick Mode recent-chat hotkey
+    private func unregisterQuickRecentHotKey() {
+        if let ref = quickRecentHotKeyRef {
+            UnregisterEventHotKey(ref)
+            quickRecentHotKeyRef = nil
+        }
+    }
+
+    // MARK: - HotKey Dispatch
+
     func onHotKeyPressed() {
         let visibility = WindowVisibility.shared
         // If animation is in progress, ignore this trigger
@@ -177,5 +269,17 @@ class HotKeyManager {
                 }
             }
         }
+    }
+
+    /// Handle Quick Mode new-chat hotkey (`⌥Space`) when Native UI is enabled.
+    func onQuickNewHotKeyPressed() {
+        guard SettingsManager.shared.enableNativeUI else { return }
+        onQuickNewHotKey?()
+    }
+
+    /// Handle Quick Mode recent-chat hotkey (`⌥⇧Space`) when Native UI is enabled.
+    func onQuickRecentHotKeyPressed() {
+        guard SettingsManager.shared.enableNativeUI else { return }
+        onQuickRecentHotKey?()
     }
 }
