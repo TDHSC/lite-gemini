@@ -12,6 +12,7 @@ struct RecentChatsPopover: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredConversationId: String?
     @State private var isHoveringRefresh = false
+    @State private var isHoveringSearch = false
 
     private static let maxDisplayedItems = 20
 
@@ -22,6 +23,10 @@ struct RecentChatsPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             headerRow
+
+            searchChatsRow
+                .padding(.horizontal, 6)
+                .padding(.bottom, 6)
 
             Divider()
                 .opacity(0.5)
@@ -95,6 +100,52 @@ struct RecentChatsPopover: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    private var searchChatsRow: some View {
+        Button {
+            onDismiss()
+            store.openSearchModal()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+
+                Text("Search Chats…")
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(Color.primary.opacity(isHoveringSearch ? 0.96 : 0.84))
+                    .lineLimit(1)
+
+                Spacer(minLength: 6)
+
+                Text(verbatim: "⌘K")
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.055))
+                    )
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6.5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isHoveringSearch ? LiquidGlassColors.hoverHighlight : Color.primary.opacity(colorScheme == .dark ? 0.045 : 0.035))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHoveringSearch = hovering
+            }
+        }
+        .accessibilityLabel(Text("Search Chats…"))
     }
 
     private var emptyStateView: some View {

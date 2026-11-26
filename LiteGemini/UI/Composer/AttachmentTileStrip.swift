@@ -81,7 +81,9 @@ private struct AttachmentTileView: View {
 
     @ViewBuilder
     private var tileContent: some View {
-        if attachment.isImage, let image = AttachmentThumbnailCache.image(for: attachment) {
+        if attachment.isFolder {
+            folderTileContent
+        } else if attachment.isImage, let image = AttachmentThumbnailCache.image(for: attachment) {
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
@@ -90,6 +92,41 @@ private struct AttachmentTileView: View {
         } else {
             fileTileContent
         }
+    }
+
+    private var folderTileContent: some View {
+        let count = attachment.folderEntries?.count ?? 0
+
+        return VStack(spacing: 3) {
+            Spacer(minLength: 4)
+
+            Image(systemName: "folder.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(LiquidGlassColors.sendButtonBlue)
+
+            Text("\(count) files")
+                .font(.system(size: 8.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(LiquidGlassColors.sendButtonBlue)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(LiquidGlassColors.sendButtonBlue.opacity(0.14))
+                )
+                .lineLimit(1)
+
+            Text(attachment.filename)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.horizontal, 6)
+                .padding(.bottom, 5)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(LiquidGlassColors.recessedCodeSurface)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("\(attachment.filename), \(count) files"))
     }
 
     private var fileTileContent: some View {

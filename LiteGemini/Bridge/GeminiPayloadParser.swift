@@ -1700,6 +1700,10 @@ nonisolated enum GeminiPayloadParser {
             citations.append(contentsOf: extractCitations(protoContainer: attachmentsMsg, repeatedField: 41))
             citations.append(contentsOf: extractCitations(protoContainer: attachmentsMsg, repeatedField: 45))
 
+            if let planCard = extractDeepResearchPlanArtifact(proto: attachmentsMsg, choiceId: choiceId) {
+                artifacts.append(planCard)
+            }
+
             if let dynamicView = attachmentsMsg.firstSubmessage(77) ?? attachmentsMsg.firstString(77).map({ _ in ProtoWireMessage(fields: []) }) {
                 let dynamicTitle = nonEmptyTrimmed(dynamicView.firstString(1)) ?? "Interactive View"
                 artifacts.append(ArtifactCardInfo(
@@ -1775,6 +1779,9 @@ nonisolated enum GeminiPayloadParser {
             }
             if let sources45 = attachmentsNode[44] {
                 citations.append(contentsOf: extractCitations(json: sources45))
+            }
+            if let planCard = extractDeepResearchPlanArtifact(json: attachmentsNode, choiceId: choiceId) {
+                artifacts.append(planCard)
             }
             if let dynamicView = attachmentsNode[76], !dynamicView.isNull {
                 let hasContent: Bool = switch dynamicView {
@@ -2149,45 +2156,209 @@ nonisolated enum GeminiPayloadParser {
                 }
             }
         }
+
         let id = firstNonEmpty(artifactMsg.firstString(1), "artifact-\(index)") ?? "artifact-\(index)"
-        let kind = inferArtifactKind(from: strings, defaultKind: .canvas)
+        let topLevelText = nonEmptyTrimmed(artifactMsg.firstString(5))
+        let docSub = artifactMsg.firstSubmessage(14)
+        let codeSub = artifactMsg.firstSubmessage(15)
+        let researchSub = artifactMsg.firstSubmessage(16)
+        let editorSub = artifactMsg.firstSubmessage(18)
+
+        var resolvedContent = topLevelText
+        var resolvedLanguage: String?
+        var resolvedHTMLPreview: String?
+        var explicitKind: ArtifactKind?
+
+        if let researchSub {
+            explicitKind = .deepResearch
+            if let reportDoc = researchSub.firstSubmessage(1) {
+                resolvedContent = firstNonEmpty(reportDoc.firstString(1), reportDoc.firstString(2), resolvedContent)
+            }
+            if let visualReport = researchSub.firstSubmessage(2) {
+                resolvedHTMLPreview = firstNonEmpty(visualReport.firstString(1), visualReport.firstString(2))
+            }
+        } else if let codeSub {
+            explicitKind = .canvas
+            resolvedContent = firstNonEmpty(codeSub.firstString(1), resolvedContent)
+            resolvedLanguage = nonEmptyTrimmed(codeSub.firstString(2))
+        } else if let editorSub {
+            explicitKind = .canvas
+            resolvedContent = firstNonEmpty(editorSub.firstString(1), resolvedContent)
+            resolvedLanguage = nonEmptyTrimmed(editorSub.firstString(3))
+        } else if let docSub {
+            explicitKind = .canvas
+            resolvedContent = firstNonEmpty(docSub.firstString(1), resolvedContent)
+            resolvedLanguage = nonEmptyTrimmed(docSub.firstString(5)) ?? "markdown"
+        }
+
+        let kind = explicitKind ?? inferArtifactKind(from: strings, defaultKind: .canvas)
         let title = firstNonEmpty(
-            artifactMsg.firstString(2),
             artifactMsg.firstString(3),
-            strings.first(where: { $0 != id && !isHTTPURL($0) && !isLikelyOpaqueToken($0) }),
+            artifactMsg.firstString(2),
+            strings.first(where: { $0 != id && $0 != resolvedContent && !isHTTPURL($0) && !isLikelyOpaqueToken($0) && $0.count <= 120 }),
             defaultArtifactTitle(for: kind)
         ) ?? defaultArtifactTitle(for: kind)
-        let subtitle = firstNonEmpty(
-            artifactMsg.firstString(4),
-            strings.first(where: { $0 != id && $0 != title && !isHTTPURL($0) && $0.count <= 80 })
-        )
 
-        return ArtifactCardInfo(id: id, kind: kind, title: title, subtitle: subtitle)
+        let subtitle: String?
+        if let lang = resolvedLanguage, !lang.isEmpty, lang.lowercased() != "markdown" {
+            subtitle = lang.uppercased()
+        } else if kind == .deepResearch && resolvedContent != nil {
+            subtitle = String(localized: "Research Report")
+        } else if resolvedContent != nil {
+            subtitle = String(localized: "Document")
+        } else {
+            subtitle = firstNonEmpty(
+                strings.first(where: { $0 != id && $0 != title && $0 != resolvedContent && !isHTTPURL($0) && $0.count <= 80 })
+            )
+        }
+
+        return ArtifactCardInfo(
+            id: id,
+            kind: kind,
+            title: title,
+            subtitle: subtitle,
+            content: resolvedContent,
+            language: resolvedLanguage,
+            htmlPreviewContent: resolvedHTMLPreview
+        )
     }
 
     private static func extractArtifact(json artifactNode: JSONValue, index: Int) -> ArtifactCardInfo? {
         guard !artifactNode.isNull else {
             return nil
         }
-        let strings = collectLeafStrings(in: artifactNode, depth: 0, limit: 16)
+        let strings = collectLeafStrings(in: artifactNode, depth: 0, limit: 24)
         guard !strings.isEmpty || (artifactNode.arrayValue?.isEmpty == false) else {
             return nil
         }
 
         let id = firstNonEmpty(artifactNode[0]?.nonEmptyStringValue, "artifact-\(index)") ?? "artifact-\(index)"
-        let kind = inferArtifactKind(from: strings, defaultKind: .canvas)
+        let topLevelText = artifactNode[4]?.nonEmptyStringValue
+        let docNode = artifactNode[13]
+        let codeNode = artifactNode[14]
+        let researchNode = artifactNode[15]
+        let editorNode = artifactNode[17]
+
+        var resolvedContent = topLevelText
+        var resolvedLanguage: String?
+        var resolvedHTMLPreview: String?
+        var explicitKind: ArtifactKind?
+
+        if let researchNode, !researchNode.isNull {
+            explicitKind = .deepResearch
+            resolvedContent = firstNonEmpty(
+                researchNode[0]?[0]?.nonEmptyStringValue,
+                researchNode[0]?[1]?.nonEmptyStringValue,
+                researchNode[0]?.nonEmptyStringValue,
+                resolvedContent
+            )
+            resolvedHTMLPreview = firstNonEmpty(
+                researchNode[1]?[0]?.nonEmptyStringValue,
+                researchNode[1]?[1]?.nonEmptyStringValue,
+                researchNode[1]?.nonEmptyStringValue
+            )
+        } else if let codeNode, !codeNode.isNull {
+            explicitKind = .canvas
+            resolvedContent = firstNonEmpty(codeNode[0]?.nonEmptyStringValue, resolvedContent)
+            resolvedLanguage = codeNode[1]?.nonEmptyStringValue
+        } else if let editorNode, !editorNode.isNull {
+            explicitKind = .canvas
+            resolvedContent = firstNonEmpty(editorNode[0]?.nonEmptyStringValue, resolvedContent)
+            resolvedLanguage = editorNode[2]?.nonEmptyStringValue
+        } else if let docNode, !docNode.isNull {
+            explicitKind = .canvas
+            resolvedContent = firstNonEmpty(docNode[0]?.nonEmptyStringValue, resolvedContent)
+            resolvedLanguage = docNode[4]?.nonEmptyStringValue ?? "markdown"
+        }
+
+        let kind = explicitKind ?? inferArtifactKind(from: strings, defaultKind: .canvas)
         let title = firstNonEmpty(
-            artifactNode[1]?.nonEmptyStringValue,
             artifactNode[2]?.nonEmptyStringValue,
-            strings.first(where: { $0 != id && !isHTTPURL($0) && !isLikelyOpaqueToken($0) }),
+            artifactNode[1]?.nonEmptyStringValue,
+            strings.first(where: { $0 != id && $0 != resolvedContent && !isHTTPURL($0) && !isLikelyOpaqueToken($0) && $0.count <= 120 }),
             defaultArtifactTitle(for: kind)
         ) ?? defaultArtifactTitle(for: kind)
-        let subtitle = firstNonEmpty(
-            artifactNode[3]?.nonEmptyStringValue,
-            strings.first(where: { $0 != id && $0 != title && !isHTTPURL($0) && $0.count <= 80 })
-        )
 
-        return ArtifactCardInfo(id: id, kind: kind, title: title, subtitle: subtitle)
+        let subtitle: String?
+        if let lang = resolvedLanguage, !lang.isEmpty, lang.lowercased() != "markdown" {
+            subtitle = lang.uppercased()
+        } else if kind == .deepResearch && resolvedContent != nil {
+            subtitle = String(localized: "Research Report")
+        } else if resolvedContent != nil {
+            subtitle = String(localized: "Document")
+        } else {
+            subtitle = firstNonEmpty(
+                strings.first(where: { $0 != id && $0 != title && $0 != resolvedContent && !isHTTPURL($0) && $0.count <= 80 })
+            )
+        }
+
+        return ArtifactCardInfo(
+            id: id,
+            kind: kind,
+            title: title,
+            subtitle: subtitle,
+            content: resolvedContent,
+            language: resolvedLanguage,
+            htmlPreviewContent: resolvedHTMLPreview
+        )
+    }
+
+    private static func extractDeepResearchPlanArtifact(
+        proto attachmentsMsg: ProtoWireMessage,
+        choiceId: String?
+    ) -> ArtifactCardInfo? {
+        guard let planMsg = attachmentsMsg.firstSubmessage(19) else {
+            return nil
+        }
+        let title = firstNonEmpty(planMsg.firstString(1), planMsg.firstString(2), "Research Plan") ?? "Research Plan"
+        let stepMessages = planMsg.allSubmessages(2) + planMsg.allSubmessages(3)
+        var steps: [DeepResearchPlanStep] = []
+        for (idx, stepMsg) in stepMessages.enumerated() {
+            if let stepTitle = firstNonEmpty(stepMsg.firstString(1), stepMsg.firstString(2)) {
+                let detail = stepMsg.firstString(3)
+                steps.append(DeepResearchPlanStep(id: "step-\(idx)", title: stepTitle, detail: detail))
+            }
+        }
+        guard !steps.isEmpty else {
+            return nil
+        }
+        let estimate = planMsg.firstString(4) ?? planMsg.firstString(5)
+        return ArtifactCardInfo(
+            id: "deep-research-plan-\(choiceId ?? "0")",
+            kind: .deepResearch,
+            title: title,
+            subtitle: estimate,
+            plan: DeepResearchPlan(steps: steps, estimatedTimeText: estimate, isConfirmed: false)
+        )
+    }
+
+    private static func extractDeepResearchPlanArtifact(
+        json attachmentsNode: JSONValue,
+        choiceId: String?
+    ) -> ArtifactCardInfo? {
+        guard let planNode = attachmentsNode[18], !planNode.isNull else {
+            return nil
+        }
+        let title = firstNonEmpty(planNode[0]?.nonEmptyStringValue, planNode[1]?.nonEmptyStringValue, "Research Plan") ?? "Research Plan"
+        let rawSteps = planNode[1]?.arrayValue ?? planNode[2]?.arrayValue ?? []
+        var steps: [DeepResearchPlanStep] = []
+        for (idx, item) in rawSteps.enumerated() {
+            if let stepTitle = firstNonEmpty(item[0]?.nonEmptyStringValue, item[1]?.nonEmptyStringValue, item.nonEmptyStringValue) {
+                let detail = item[2]?.nonEmptyStringValue
+                steps.append(DeepResearchPlanStep(id: "step-\(idx)", title: stepTitle, detail: detail))
+            }
+        }
+        guard !steps.isEmpty else {
+            return nil
+        }
+        let estimate = planNode[3]?.nonEmptyStringValue ?? planNode[4]?.nonEmptyStringValue
+        return ArtifactCardInfo(
+            id: "deep-research-plan-\(choiceId ?? "0")",
+            kind: .deepResearch,
+            title: title,
+            subtitle: estimate,
+            plan: DeepResearchPlan(steps: steps, estimatedTimeText: estimate, isConfirmed: false)
+        )
     }
 
     private static func inferArtifactKind(from strings: [String], defaultKind: ArtifactKind) -> ArtifactKind {

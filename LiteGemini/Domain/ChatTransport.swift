@@ -122,4 +122,154 @@ protocol ChatTransport: AnyObject {
 
     /// Switches the active Google account to the given `?authuser=N` index.
     func switchAccount(authUserIndex: Int) async throws -> HomeLoadResult
+
+    /// Synchronizes an optional composer tool mode (`Canvas` or `Deep Research`) on the underlying session.
+    func setComposerTool(_ tool: ComposerToolMode?) async throws
+
+    /// Approves the pending Deep Research plan (`Start Research`) and streams the execution progress & final report.
+    func confirmDeepResearchPlan() -> AsyncThrowingStream<StreamingDelta, Error>
+
+    // MARK: - v2.2 Conversational Power Tools
+
+    /// Submits a prompt with optional staged `QuotedPassage` entries and attachments, returning response deltas.
+    func sendPrompt(
+        text: String,
+        quotes: [QuotedPassage],
+        attachments: [StagedAttachment],
+        modelId: String?,
+        isTemporaryChat: Bool
+    ) -> AsyncThrowingStream<StreamingDelta, Error>
+
+    /// Submits a prompt with staged quotes and attachments, awaiting completion of the active stream.
+    func sendPrompt(
+        _ text: String,
+        quotes: [QuotedPassage],
+        attachments: [StagedAttachment]
+    ) async
+
+    /// Regenerates the latest assistant response with a specific variant and optional model switch, streaming deltas.
+    func regenerateLastTurn(
+        variant: RegenerateVariant,
+        modelId: String?
+    ) -> AsyncThrowingStream<StreamingDelta, Error>
+
+    /// Regenerates the latest assistant response with a specific variant and optional model switch.
+    func regenerateLatestResponse(variant: RegenerateVariant, modelId: String?) async
+
+    /// Branches a conversation from the specified turn into a new chat, returning the new `conversationId`.
+    func branchConversation(
+        conversationId: String,
+        requestId: String?,
+        responseId: String?
+    ) async -> String?
+
+    /// Creates a public `gemini.google.com/share/<id>` link for the entire chat or a single turn.
+    func createPublicShareLink(
+        conversationId: String,
+        scope: ShareLinkScope,
+        selectedDraftId: String?
+    ) async throws -> ShareLinkResult
+
+    /// Exports a Markdown message to Google Docs, Gmail Drafts, Colab, or Sheets, returning the artifact URL.
+    func exportToCloudService(
+        service: CloudExportService,
+        title: String,
+        markdownText: String
+    ) async throws -> URL
+
+    /// Searches remote Gemini chat history semantically via `SearchChatsPageQuery`.
+    func searchRemoteConversations(query: String, limit: Int) async -> [ConversationSearchHit]
+
+    /// Synthesizes a spoken MP3 audio chunk for `text` in `locale` via `useResponseTtsQuery`.
+    func synthesizeSpeechChunk(text: String, locale: String) async -> Data?
+}
+
+extension ChatTransport {
+
+    func setComposerTool(_ tool: ComposerToolMode?) async throws {}
+
+    func confirmDeepResearchPlan() -> AsyncThrowingStream<StreamingDelta, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func sendPrompt(
+        text: String,
+        quotes: [QuotedPassage],
+        attachments: [StagedAttachment],
+        modelId: String?,
+        isTemporaryChat: Bool
+    ) -> AsyncThrowingStream<StreamingDelta, Error> {
+        let combined = QuotedPassage.formatPrompt(text, with: quotes)
+        return sendPrompt(
+            text: combined,
+            attachments: attachments,
+            modelId: modelId,
+            isTemporaryChat: isTemporaryChat
+        )
+    }
+
+    func sendPrompt(
+        _ text: String,
+        quotes: [QuotedPassage],
+        attachments: [StagedAttachment]
+    ) async {
+        let stream = sendPrompt(
+            text: text,
+            quotes: quotes,
+            attachments: attachments,
+            modelId: nil,
+            isTemporaryChat: false
+        )
+        do {
+            for try await _ in stream {}
+        } catch {}
+    }
+
+    func regenerateLastTurn(
+        variant: RegenerateVariant,
+        modelId: String?
+    ) -> AsyncThrowingStream<StreamingDelta, Error> {
+        regenerateLastTurn()
+    }
+
+    func regenerateLatestResponse(variant: RegenerateVariant, modelId: String?) async {
+        let stream = regenerateLastTurn(variant: variant, modelId: modelId)
+        do {
+            for try await _ in stream {}
+        } catch {}
+    }
+
+    func branchConversation(
+        conversationId: String,
+        requestId: String?,
+        responseId: String?
+    ) async -> String? {
+        nil
+    }
+
+    func createPublicShareLink(
+        conversationId: String,
+        scope: ShareLinkScope,
+        selectedDraftId: String?
+    ) async throws -> ShareLinkResult {
+        throw GeminiTransportActionError.unsupported
+    }
+
+    func exportToCloudService(
+        service: CloudExportService,
+        title: String,
+        markdownText: String
+    ) async throws -> URL {
+        throw GeminiTransportActionError.unsupported
+    }
+
+    func searchRemoteConversations(query: String, limit: Int) async -> [ConversationSearchHit] {
+        []
+    }
+
+    func synthesizeSpeechChunk(text: String, locale: String) async -> Data? {
+        nil
+    }
 }

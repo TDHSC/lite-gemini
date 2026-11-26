@@ -1,5 +1,39 @@
 import Foundation
 
+// MARK: - ComposerToolMode
+
+/// Optional Gemini composer tool mode (`Canvas` or `Deep Research`) synced with `toolbox-drawer`.
+nonisolated enum ComposerToolMode: String, CaseIterable, Codable, Equatable, Hashable, Identifiable, Sendable {
+    case canvas
+    case deepResearch
+
+    var id: String { rawValue }
+}
+
+// MARK: - StagedFolderEntry
+
+/// Single file inside a staged codebase folder preserving its `webkitRelativePath` hierarchy.
+nonisolated struct StagedFolderEntry: Equatable, Sendable {
+
+    /// Slash-delimited path starting with the root folder name (e.g. `"my-app/src/index.ts"`).
+    let relativePath: String
+    let filename: String
+    let mimeType: String
+    let data: Data
+
+    init(
+        relativePath: String,
+        filename: String,
+        mimeType: String,
+        data: Data
+    ) {
+        self.relativePath = relativePath
+        self.filename = filename
+        self.mimeType = mimeType
+        self.data = data
+    }
+}
+
 // MARK: - StagedAttachmentSummary
 
 /// Lightweight, disk-serializable metadata describing a user attachment without raw payload bytes.
@@ -12,6 +46,11 @@ nonisolated struct StagedAttachmentSummary: Codable, Equatable, Hashable, Identi
     let isImage: Bool
     let pixelWidth: Int?
     let pixelHeight: Int?
+    let folderFileCount: Int?
+
+    var isFolder: Bool {
+        (folderFileCount ?? 0) > 0
+    }
 
     init(
         id: UUID = UUID(),
@@ -20,7 +59,8 @@ nonisolated struct StagedAttachmentSummary: Codable, Equatable, Hashable, Identi
         byteCount: Int,
         isImage: Bool,
         pixelWidth: Int? = nil,
-        pixelHeight: Int? = nil
+        pixelHeight: Int? = nil,
+        folderFileCount: Int? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -29,12 +69,13 @@ nonisolated struct StagedAttachmentSummary: Codable, Equatable, Hashable, Identi
         self.isImage = isImage
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
+        self.folderFileCount = folderFileCount
     }
 }
 
 // MARK: - StagedAttachment
 
-/// In-memory file or image staged in the composer prior to upload through the session bridge.
+/// In-memory file, image, or filtered directory bundle staged in the composer prior to upload.
 nonisolated struct StagedAttachment: Identifiable, Equatable, Sendable {
 
     let id: UUID
@@ -45,6 +86,18 @@ nonisolated struct StagedAttachment: Identifiable, Equatable, Sendable {
     let isImage: Bool
     let pixelWidth: Int?
     let pixelHeight: Int?
+    let folderEntries: [StagedFolderEntry]?
+
+    var isFolder: Bool {
+        !(folderEntries?.isEmpty ?? true)
+    }
+
+    var totalByteCount: Int {
+        if let folderEntries, !folderEntries.isEmpty {
+            return folderEntries.reduce(0) { $0 + $1.data.count }
+        }
+        return data.count
+    }
 
     init(
         id: UUID = UUID(),
@@ -54,7 +107,8 @@ nonisolated struct StagedAttachment: Identifiable, Equatable, Sendable {
         fileURL: URL? = nil,
         isImage: Bool,
         pixelWidth: Int? = nil,
-        pixelHeight: Int? = nil
+        pixelHeight: Int? = nil,
+        folderEntries: [StagedFolderEntry]? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -64,6 +118,7 @@ nonisolated struct StagedAttachment: Identifiable, Equatable, Sendable {
         self.isImage = isImage
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
+        self.folderEntries = folderEntries
     }
 
     /// Produces a metadata-only summary suitable for persisting inside `ConversationSnapshot` files.
@@ -72,10 +127,11 @@ nonisolated struct StagedAttachment: Identifiable, Equatable, Sendable {
             id: id,
             filename: filename,
             mimeType: mimeType,
-            byteCount: data.count,
+            byteCount: totalByteCount,
             isImage: isImage,
             pixelWidth: pixelWidth,
-            pixelHeight: pixelHeight
+            pixelHeight: pixelHeight,
+            folderFileCount: folderEntries?.count
         )
     }
 }

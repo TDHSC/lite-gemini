@@ -322,6 +322,11 @@ struct LiteGeminiApp: App {
 
                 Divider()
             }
+
+            // Native v2.2 conversational power tools: Search Chats (⌘K), Quote Selection (⌘⇧'), Ask in Btw (⌘⇧B).
+            CommandMenu("Chat") {
+                NativeChatCommands(coordinator: appCoordinator)
+            }
         }
 
         // Standard macOS settings window, opened with Cmd+,
@@ -385,6 +390,34 @@ private struct NavigationHistoryCommands: View {
         }
         .keyboardShortcut("]", modifiers: .command)
         .disabled(settings.isNativeUIActive || !webViewModel.canGoForward)
+    }
+}
+
+/// Menu commands & global window shortcuts for v2.2 conversational power tools.
+private struct NativeChatCommands: View {
+    @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject private var settings = SettingsManager.shared
+
+    var body: some View {
+        Button("Search Chats…") {
+            coordinator.toggleSearchChats()
+        }
+        .keyboardShortcut("k", modifiers: .command)
+        .disabled(!settings.isNativeUIActive)
+
+        Divider()
+
+        Button("Quote Selection") {
+            coordinator.quoteCurrentSelectionIntoComposer()
+        }
+        .keyboardShortcut("'", modifiers: [.command, .shift])
+        .disabled(!settings.isNativeUIActive)
+
+        Button("Ask in Btw") {
+            coordinator.triggerBtwFromShortcut()
+        }
+        .keyboardShortcut("b", modifiers: [.command, .shift])
+        .disabled(!settings.isNativeUIActive)
     }
 }
 

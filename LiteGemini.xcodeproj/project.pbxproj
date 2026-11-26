@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		A1B2C3D42F3B000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D42F3B000000000002 /* Sparkle */; };
 		A1B2C3D42F3B000000000011 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D42F3B000000000012 /* Markdown */; };
+		A1B2C3D42F3B000000000021 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D42F3B000000000022 /* SwiftMath */; };
+		A1B2C3D42F3B000000000031 /* HighlightSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D42F3B000000000032 /* HighlightSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +45,8 @@
 			files = (
 				A1B2C3D42F3B000000000001 /* Sparkle in Frameworks */,
 				A1B2C3D42F3B000000000011 /* Markdown in Frameworks */,
+				A1B2C3D42F3B000000000021 /* SwiftMath in Frameworks */,
+				A1B2C3D42F3B000000000031 /* HighlightSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -87,6 +91,8 @@
 			packageProductDependencies = (
 				A1B2C3D42F3B000000000002 /* Sparkle */,
 				A1B2C3D42F3B000000000012 /* Markdown */,
+				A1B2C3D42F3B000000000022 /* SwiftMath */,
+				A1B2C3D42F3B000000000032 /* HighlightSwift */,
 			);
 			productName = "Lite Gemini";
 			productReference = 272B660F2F3AFDA200EBF5DA /* Lite Gemini.app */;
@@ -120,6 +126,8 @@
 			packageReferences = (
 				A1B2C3D42F3B000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 				A1B2C3D42F3B000000000013 /* XCRemoteSwiftPackageReference "swift-markdown" */,
+				A1B2C3D42F3B000000000023 /* XCRemoteSwiftPackageReference "SwiftMath" */,
+				A1B2C3D42F3B000000000033 /* XCRemoteSwiftPackageReference "HighlightSwift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 272B66102F3AFDA200EBF5DA /* Products */;
@@ -404,6 +412,22 @@
 				minimumVersion = 0.5.0;
 			};
 		};
+		A1B2C3D42F3B000000000023 /* XCRemoteSwiftPackageReference "SwiftMath" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mgriebling/SwiftMath";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.7.3;
+			};
+		};
+		A1B2C3D42F3B000000000033 /* XCRemoteSwiftPackageReference "HighlightSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/appstefan/HighlightSwift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -416,6 +440,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A1B2C3D42F3B000000000013 /* XCRemoteSwiftPackageReference "swift-markdown" */;
 			productName = Markdown;
+		};
+		A1B2C3D42F3B000000000022 /* SwiftMath */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D42F3B000000000023 /* XCRemoteSwiftPackageReference "SwiftMath" */;
+			productName = SwiftMath;
+		};
+		A1B2C3D42F3B000000000032 /* HighlightSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D42F3B000000000033 /* XCRemoteSwiftPackageReference "HighlightSwift" */;
+			productName = HighlightSwift;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

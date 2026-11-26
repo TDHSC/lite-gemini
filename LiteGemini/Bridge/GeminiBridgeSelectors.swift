@@ -152,6 +152,51 @@ nonisolated enum GeminiBridgeSelectors: Sendable {
         static let deleteConversation = "GzXR5e"
     }
 
+    // MARK: - Omakase GraphQL HTTP Gateway
+
+    /// Verified Omakase GraphQL HTTP Gateway (`oxygen-http`) endpoint paths, origins,
+    /// persisted query IDs, operation names, and error codes (`2026-11-26`).
+    nonisolated enum GraphQLGateway: Sendable {
+        /// Primary Omakase GraphQL RPC path on `geminiweb-pa.clients6.google.com`
+        static let executePath = "/$rpc/gdm.geminiapp.hydrofoil.omakase.OmakaseGateway/ExecuteGraphqlHttp"
+        /// Same-origin fallback GraphQL endpoint path on `gemini.google.com`
+        static let sameOriginFallbackPath = "/_/BardChatUi/graphql"
+        /// Canonical Gemini web origin used in `SAPISIDHASH` digest calculation
+        static let defaultOrigin = "https://gemini.google.com"
+        /// Default clients6 API origin hosting OmakaseGateway
+        static let defaultApiOrigin = "https://geminiweb-pa.clients6.google.com"
+
+        /// Transient `BardErrorInfo` error code (`SHARE_ERROR_TARGET_NOT_PERSISTED`) requiring a 2s single retry
+        static let shareTargetNotPersistedErrorCode = 1218
+
+        /// Verified `persistedQueryId` tokens for Omakase GraphQL operations
+        nonisolated enum PersistedQuery: Sendable {
+            static let branchConversation = "2/JElMc8MRhiCK7G6DRucRllH8DyUUtlgZACqza4oLISU="
+            static let createPublicShareLink = "2/eOGb8QHyoSUHf18EjPRYa7b0FcKTQZawXJzi8i8+JeA="
+            static let exportMessage = "2/5VQOYy/e314m5sPqgdiBi2I/yACWnQk4VqP+bTgFhX8="
+            static let searchChats = "2/LLcwgETnZDeKTolcftrhEUT4oNNrjiKwmznSgDTfiNw="
+            static let responseTts = "2/Et0QvC+4P7RJ7R4/dA7JdD6lp3yfPsb5/OgGD0FOhkk="
+        }
+
+        /// Canonical GraphQL `operationName` values paired with Omakase persisted queries
+        nonisolated enum OperationName: Sendable {
+            static let branchConversation = "ChatResponseActionBarBranchMutation"
+            static let createPublicShareLink = "useCreatePublicShareLinkMutation"
+            static let exportMessage = "useExportMessageMutation"
+            static let searchChats = "SearchChatsPageQuery"
+            static let responseTts = "useResponseTtsQuery"
+        }
+
+        /// Allowed Google cloud hosts for validated `useExportMessageMutation` artifact URLs
+        static let allowedExportHosts: [String] = [
+            "docs.google.com",
+            "mail.google.com",
+            "colab.research.google.com",
+            "sheets.google.com",
+            "drive.google.com"
+        ]
+    }
+
     // MARK: - Wire Format & Proto / JSPB Field Indices
 
     /// Verified wire framing constants, protobuf field numbers (1-based), and corresponding
@@ -426,6 +471,63 @@ nonisolated enum GeminiBridgeSelectors: Sendable {
             ]
         )
 
+        /// Code import submenu item inside the `+` upload menu (`<code-import>`)
+        static let codeImportTrigger = SelectorGroup(
+            primary: "code-import button",
+            fallbacks: [
+                #"button:has(mat-icon[fonticon="code"])"#,
+                #"[data-test-id="upload-code-folder-list-item"]"#
+            ]
+        )
+
+        /// Local code folder upload menu item inside `<code-folder-uploader>`
+        static let codeFolderUploadItem = SelectorGroup(
+            primary: #"[data-test-id="upload-code-folder-list-item"]"#,
+            fallbacks: [
+                #"[data-test-id="hidden-local-code-folder-upload-button"]"#,
+                "button.code-folder-uploader-local",
+                "code-folder-uploader button"
+            ]
+        )
+
+        /// Directory `<input type="file" webkitdirectory>` created by `<code-folder-uploader>`
+        static let directoryFileInput = SelectorGroup(
+            primary: #"code-folder-uploader input[type="file"][webkitdirectory]"#,
+            fallbacks: [
+                #"input[type="file"][webkitdirectory]"#,
+                #"code-folder-uploader input[type="file"]"#
+            ]
+        )
+
+        /// Toolbox drawer trigger button in `input-area-v2` (hosts Canvas & Deep Research tools)
+        static let toolboxDrawerTrigger = SelectorGroup(
+            primary: "input-area-v2 toolbox-drawer button.toolbox-drawer-button",
+            fallbacks: [
+                #"input-area-v2 toolbox-drawer button[aria-haspopup="menu"]"#,
+                #"input-area-v2 button:has(mat-icon[fonticon="page_info"])"#,
+                #"input-area-v2 button:has(mat-icon[fonticon="tune"])"#,
+                #"input-area-v2 button[jslog^="300142;"]"#
+            ]
+        )
+
+        /// Selectable tool items inside `toolbox-drawer` or its overlay menu
+        static let toolboxDrawerItem = SelectorGroup(
+            primary: "toolbox-drawer-item button.toolbox-drawer-item-button",
+            fallbacks: [
+                #"toolbox-drawer-item [role="menuitemcheckbox"]"#,
+                #".cdk-overlay-container [role="menuitemcheckbox"]"#,
+                ".cdk-overlay-container toolbox-drawer-item button"
+            ]
+        )
+
+        /// Active tool chip deselect (`×`) button in `input-area-v2`
+        static let toolboxDeselectButton = SelectorGroup(
+            primary: "input-area-v2 .toolbox-drawer-item-deselect-button",
+            fallbacks: [
+                "toolbox-drawer .toolbox-drawer-item-deselect-button"
+            ]
+        )
+
         /// Attachment preview chips rendered inside the composer once files are staged/uploaded
         static let attachmentPreview = SelectorGroup(
             primary: "uploader-file-preview-container uploader-file-preview",
@@ -617,6 +719,122 @@ nonisolated enum GeminiBridgeSelectors: Sendable {
             fallbacks: [
                 ".cdk-overlay-container .regenerate-menu button[mat-menu-item]",
                 #".cdk-overlay-container button:has(mat-icon[fonticon="refresh"])"#
+            ]
+        )
+
+        /// Deep Research plan confirmation card rendered before multi-site research begins
+        static let deepResearchConfirmationWidget = SelectorGroup(
+            primary: "deep-research-confirmation-widget",
+            fallbacks: [
+                #"model-response [data-test-id="research-steps"]"#
+            ]
+        )
+
+        /// Confirm / Start Research button inside `deep-research-confirmation-widget`
+        static let deepResearchConfirmButton = SelectorGroup(
+            primary: #"deep-research-confirmation-widget [data-test-id="confirm-button"]"#,
+            fallbacks: [
+                "deep-research-confirmation-widget button.confirm-button"
+            ]
+        )
+
+        /// Edit Plan button inside `deep-research-confirmation-widget`
+        static let deepResearchEditButton = SelectorGroup(
+            primary: #"deep-research-confirmation-widget [data-test-id="edit-button"]"#,
+            fallbacks: [
+                "deep-research-confirmation-widget button.edit-button"
+            ]
+        )
+
+        /// Live Deep Research execution status indicator
+        static let deepResearchProcessingStatus = SelectorGroup(
+            primary: "deep-research-processing-status",
+            fallbacks: [
+                "deep-research-processing-indicator"
+            ]
+        )
+
+        /// Branch in New Chat action button on a `model-response` turn or its overflow menu
+        static let branchButton = SelectorGroup(
+            primary: #"[data-test-id="branch-button"]"#,
+            fallbacks: [
+                #"model-response [data-test-id="branch-button"] button"#,
+                #".cdk-overlay-container [data-test-id="branch-button"]"#,
+                #"button:has(mat-icon[fonticon="fork_right"])"#,
+                #"button:has(mat-icon[fonticon="call_split"])"#,
+                #"button[aria-label*="Branch" i]"#
+            ]
+        )
+
+        /// Share / Export menu button on a `model-response` turn or conversation bar
+        static let shareButton = SelectorGroup(
+            primary: #"[data-test-id="share-button"]"#,
+            fallbacks: [
+                #"[data-test-id="share-menu-button"]"#,
+                #"model-response [data-test-id="share-button"] button"#,
+                #"model-response button:has(mat-icon[fonticon="share"])"#,
+                #"button[aria-label*="Share" i]"#
+            ]
+        )
+
+        /// Modify Response button (Shorter / Longer / Simpler / Casual / Professional) on latest turn
+        static let modifyResponseButton = SelectorGroup(
+            primary: #"model-response [data-test-id="redo-button"]"#,
+            fallbacks: [
+                #"model-response button:has(mat-icon[fonticon="tune"])"#,
+                #"[data-test-id="modify-response-button"]"#,
+                "modify-response-button button",
+                "model-response modify-response-button button",
+                #"model-response button[aria-label*="Modify response" i]"#
+            ]
+        )
+
+        /// Retry Without Tools action inside the turn action bar or regenerate menu
+        static let retryWithoutToolButton = SelectorGroup(
+            primary: #"[data-test-id="retry-without-tool-button"]"#,
+            fallbacks: [
+                #".cdk-overlay-container [data-test-id="retry-without-tool-button"]"#,
+                #"button[aria-label*="without tools" i]"#,
+                #"button[aria-label*="Retry without" i]"#
+            ]
+        )
+
+        /// Single-turn Listen / TTS audio playback button (`<tts-control-v2>`)
+        static let ttsControl = SelectorGroup(
+            primary: "tts-control-v2 button",
+            fallbacks: [
+                #"[data-test-id="tts-button"]"#,
+                #"model-response tts-control-v2 button"#,
+                #"model-response button:has(mat-icon[fonticon="volume_up"])"#,
+                #"model-response button[aria-label*="Listen" i]"#
+            ]
+        )
+
+        /// Global Search Chats button in Gemini's side navigation
+        static let searchChatsButton = SelectorGroup(
+            primary: #"[data-test-id="search-chats-button"]"#,
+            fallbacks: [
+                #"button[aria-label*="Search" i][data-test-id*="search"]"#,
+                #"side-navigation-content button:has(mat-icon[fonticon="search"])"#
+            ]
+        )
+
+        /// Overflow ("More") action menu button inside a `model-response` turn
+        static let moreActionsButton = SelectorGroup(
+            primary: #"model-response [data-test-id="more-menu-button"]"#,
+            fallbacks: [
+                #"model-response message-actions button[aria-haspopup="menu"]:has(mat-icon[fonticon="more_vert"])"#,
+                #"model-response button:has(mat-icon[fonticon="more_vert"])"#
+            ]
+        )
+
+        /// Interactive menu options rendered inside Angular's `.cdk-overlay-container`
+        static let overlayMenuItems = SelectorGroup(
+            primary: #".cdk-overlay-container [role="menuitem"]"#,
+            fallbacks: [
+                ".cdk-overlay-container button[mat-menu-item]",
+                ".cdk-overlay-container gem-menu-item",
+                #".cdk-overlay-container [data-test-id="regenerate-option"]"#
             ]
         )
     }

@@ -83,9 +83,69 @@ nonisolated struct ImageAttachment: Codable, Equatable, Hashable, Identifiable, 
     }
 }
 
+// MARK: - DeepResearchPlanStep
+
+/// Single step in a Gemini Deep Research plan presented before multi-source execution begins.
+nonisolated struct DeepResearchPlanStep: Codable, Equatable, Hashable, Identifiable, Sendable {
+
+    let id: String
+    let title: String
+    let detail: String?
+
+    init(
+        id: String,
+        title: String,
+        detail: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+    }
+}
+
+// MARK: - DeepResearchPlan
+
+/// Structured research plan requiring user confirmation (`Start Research` / `Edit Plan`).
+nonisolated struct DeepResearchPlan: Codable, Equatable, Hashable, Sendable {
+
+    let steps: [DeepResearchPlanStep]
+    let estimatedTimeText: String?
+    var isConfirmed: Bool
+
+    init(
+        steps: [DeepResearchPlanStep],
+        estimatedTimeText: String? = nil,
+        isConfirmed: Bool = false
+    ) {
+        self.steps = steps
+        self.estimatedTimeText = estimatedTimeText
+        self.isConfirmed = isConfirmed
+    }
+}
+
+// MARK: - DeepResearchProgress
+
+/// Live execution status emitted while Gemini Deep Research browses sources and synthesizes a report.
+nonisolated struct DeepResearchProgress: Codable, Equatable, Hashable, Sendable {
+
+    let statusText: String
+    let isRunning: Bool
+    let browsedSourceCount: Int?
+
+    init(
+        statusText: String,
+        isRunning: Bool,
+        browsedSourceCount: Int? = nil
+    ) {
+        self.statusText = statusText
+        self.isRunning = isRunning
+        self.browsedSourceCount = browsedSourceCount
+    }
+}
+
 // MARK: - ArtifactKind
 
-/// Category of web-only rich artifact surfaced as a fallback card in Native Mode.
+/// Category of rich Gemini artifact surfaced as a native interactive card or fallback card.
 nonisolated enum ArtifactKind: String, Codable, Equatable, Hashable, Sendable {
     case canvas
     case deepResearch
@@ -96,24 +156,128 @@ nonisolated enum ArtifactKind: String, Codable, Equatable, Hashable, Sendable {
 
 // MARK: - ArtifactCardInfo
 
-/// Metadata describing an unsupported rich web artifact with an "Open in Web" escape hatch.
+/// Metadata and optional rich payload describing a Gemini Canvas document/code workspace,
+/// Deep Research plan/report, or web-only fallback artifact.
+///
+/// All `v2.1` payload properties are optional so `v2.0` JSON snapshots on disk decode seamlessly.
 nonisolated struct ArtifactCardInfo: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     let id: String
     let kind: ArtifactKind
     let title: String
     let subtitle: String?
+    let content: String?
+    let language: String?
+    let htmlPreviewContent: String?
+    var plan: DeepResearchPlan?
+    var progress: DeepResearchProgress?
 
     init(
         id: String,
         kind: ArtifactKind,
         title: String,
-        subtitle: String? = nil
+        subtitle: String? = nil,
+        content: String? = nil,
+        language: String? = nil,
+        htmlPreviewContent: String? = nil,
+        plan: DeepResearchPlan? = nil,
+        progress: DeepResearchProgress? = nil
     ) {
         self.id = id
         self.kind = kind
         self.title = title
         self.subtitle = subtitle
+        self.content = content
+        self.language = language
+        self.htmlPreviewContent = htmlPreviewContent
+        self.plan = plan
+        self.progress = progress
+    }
+
+    /// `true` when this artifact carries native text or HTML content openable in the Split Pane.
+    var hasNativeContent: Bool {
+        if let content, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        if let htmlPreviewContent, !htmlPreviewContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        return false
+    }
+
+    /// `true` when this card represents a pre-execution Deep Research plan awaiting user confirmation.
+    var isDeepResearchPlanCard: Bool {
+        kind == .deepResearch && plan != nil && !hasNativeContent
+    }
+
+    /// Normalized lowercase language tag inferred from `language` or content prefix.
+    var normalizedLanguage: String? {
+        if let raw = language?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           !raw.isEmpty {
+            return raw
+        }
+        guard let trimmed = content?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
+            return nil
+        }
+        if trimmed.hasPrefix("<!doctype html") || trimmed.hasPrefix("<html") {
+            return "html"
+        }
+        if trimmed.hasPrefix("<svg") {
+            return "svg"
+        }
+        return nil
+    }
+
+    /// `true` when this Canvas/Report artifact can render inside the sandboxed live `Preview` tab.
+    var supportsLiveWebPreview: Bool {
+        if let htmlPreviewContent, !htmlPreviewContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        guard let lang = normalizedLanguage else {
+            return false
+        }
+        if lang == "html" || lang == "htm" || lang == "svg" {
+            return true
+        }
+        if lang == "xml",
+           let trimmed = content?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           trimmed.contains("<svg") {
+            return true
+        }
+        return false
+    }
+
+    /// `true` when this artifact represents a source code workspace rather than prose Markdown.
+    var isCodeWorkspace: Bool {
+        guard let lang = normalizedLanguage else {
+            return false
+        }
+        return lang != "markdown" && lang != "md" && lang != "text" && lang != "plaintext"
+    }
+
+    ///Suggested file extension when exporting or saving this artifact to disk.
+    var suggestedFileExtension: String {
+        switch normalizedLanguage {
+        case "html", "htm": return "html"
+        case "svg": return "svg"
+        case "swift": return "swift"
+        case "python", "py": return "py"
+        case "javascript", "js": return "js"
+        case "typescript", "ts": return "ts"
+        case "tsx": return "tsx"
+        case "jsx": return "jsx"
+        case "css": return "css"
+        case "json": return "json"
+        case "rust", "rs": return "rs"
+        case "go": return "go"
+        case "java": return "java"
+        case "c": return "c"
+        case "cpp", "c++", "cxx": return "cpp"
+        case "sh", "bash", "zsh": return "sh"
+        case "yaml", "yml": return "yaml"
+        case "sql": return "sql"
+        default: return isCodeWorkspace ? (normalizedLanguage ?? "txt") : "md"
+        }
     }
 }
 
@@ -157,6 +321,7 @@ nonisolated struct ChatTurn: Codable, Equatable, Hashable, Identifiable, Sendabl
     let id: String
     var userPrompt: String
     var userAttachments: [StagedAttachmentSummary]
+    var quotedPassages: [QuotedPassage]?
     var assistantParts: [MessagePart]
     var thinkingText: String?
     var isThinkingComplete: Bool
@@ -168,6 +333,7 @@ nonisolated struct ChatTurn: Codable, Equatable, Hashable, Identifiable, Sendabl
         id: String,
         userPrompt: String,
         userAttachments: [StagedAttachmentSummary] = [],
+        quotedPassages: [QuotedPassage]? = nil,
         assistantParts: [MessagePart] = [],
         thinkingText: String? = nil,
         isThinkingComplete: Bool = true,
@@ -178,6 +344,7 @@ nonisolated struct ChatTurn: Codable, Equatable, Hashable, Identifiable, Sendabl
         self.id = id
         self.userPrompt = userPrompt
         self.userAttachments = userAttachments
+        self.quotedPassages = quotedPassages
         self.assistantParts = assistantParts
         self.thinkingText = thinkingText
         self.isThinkingComplete = isThinkingComplete
@@ -194,6 +361,16 @@ nonisolated struct ChatTurn: Codable, Equatable, Hashable, Identifiable, Sendabl
             }
             return nil
         }.joined(separator: "\n\n")
+    }
+
+    /// `true` when this turn contains at least one rich artifact (Canvas, Deep Research, Gem, or extension).
+    var hasArtifacts: Bool {
+        assistantParts.contains { part in
+            if case .unsupportedArtifact = part {
+                return true
+            }
+            return false
+        }
     }
 }
 

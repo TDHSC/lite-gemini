@@ -99,7 +99,10 @@ struct AdaptiveComposerView: View {
     private var hasTopExtras: Bool {
         draft.isEditing
             || draft.showsFolderWebFallbackBanner
+            || draft.activeToolMode != nil
             || !draft.stagedAttachments.isEmpty
+            || !draft.quotes.isEmpty
+            || draft.isQuoteCapAlertVisible
     }
 
     /// Current concentric visual state: `.compactPill` (52pt single row) or `.expandedCard` (multi-row).
@@ -251,17 +254,37 @@ struct AdaptiveComposerView: View {
         .animation(LiquidGlassMotion.morph(reduceMotion: reduceMotion), value: layoutMode)
         .animation(LiquidGlassMotion.morph(reduceMotion: reduceMotion), value: isComposerFrosted)
         .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: draft.stagedAttachments.count)
+        .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: draft.quotes.count)
+        .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: draft.isQuoteCapAlertVisible)
         .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: draft.isEditing)
         .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: draft.showsFolderWebFallbackBanner)
+        .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: draft.activeToolMode)
         .animation(LiquidGlassMotion.morph(reduceMotion: reduceMotion), value: store.isStreaming)
     }
 
-    // MARK: - Top Extras (Editing Banner, Folder Fallback Banner, Attachment Tiles)
+    // MARK: - Top Extras (Editing Banner, Tool Chip, Quotes, Folder Fallback Banner, Attachment Tiles)
 
     private var topExtrasSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             if draft.isEditing {
                 editingBanner
+            }
+
+            if let toolMode = draft.activeToolMode {
+                activeToolModeChip(for: toolMode)
+            }
+
+            if !draft.quotes.isEmpty || draft.isQuoteCapAlertVisible {
+                ComposerQuoteBannerListView(
+                    items: draft.quoteBannerItems,
+                    showsMaxCapBanner: draft.isQuoteCapAlertVisible,
+                    onRemove: { id in
+                        draft.removeQuote(id: id)
+                    },
+                    onDismissMaxCapBanner: {
+                        draft.dismissQuoteCapAlert()
+                    }
+                )
             }
 
             if draft.showsFolderWebFallbackBanner {
@@ -277,6 +300,46 @@ struct AdaptiveComposerView: View {
                 )
             }
         }
+    }
+
+    private func activeToolModeChip(for toolMode: ComposerToolMode) -> some View {
+        let iconName = toolMode == .canvas ? "doc.richtext" : "text.magnifyingglass"
+        let labelText = toolMode == .canvas
+            ? String(localized: "Canvas")
+            : String(localized: "Deep Research")
+
+        return HStack(spacing: 6) {
+            Image(systemName: iconName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(LiquidGlassColors.sendButtonBlue)
+
+            Text(labelText)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(LiquidGlassColors.sendButtonBlue)
+                .lineLimit(1)
+
+            Button {
+                Task {
+                    await store.setToolMode(nil)
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 16)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Remove \(labelText)"))
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 6)
+        .padding(.vertical, 4)
+        .glassCapsule(
+            variant: .clear,
+            tint: LiquidGlassColors.sendButtonBlue.opacity(0.14),
+            interactive: true
+        )
     }
 
     private var editingBanner: some View {
@@ -444,16 +507,36 @@ struct AdaptiveComposerView: View {
                 Label("Add Files or Photos…", systemImage: "paperclip")
             }
 
+            Button {
+                presentFolderOpenPanel()
+            } label: {
+                Label("Upload Code Folder…", systemImage: "folder.badge.plus")
+            }
+
             Divider()
 
             Button {
-                if let onOpenFolderInWebMode {
-                    onOpenFolderInWebMode()
-                } else {
-                    draft.showsFolderWebFallbackBanner = true
+                let next: ComposerToolMode? = draft.activeToolMode == .canvas ? nil : .canvas
+                Task {
+                    await store.setToolMode(next)
                 }
             } label: {
-                Label("Upload Folder in Web Mode…", systemImage: "folder.badge.plus")
+                Label(
+                    "Canvas",
+                    systemImage: draft.activeToolMode == .canvas ? "checkmark.circle.fill" : "doc.richtext"
+                )
+            }
+
+            Button {
+                let next: ComposerToolMode? = draft.activeToolMode == .deepResearch ? nil : .deepResearch
+                Task {
+                    await store.setToolMode(next)
+                }
+            } label: {
+                Label(
+                    "Deep Research",
+                    systemImage: draft.activeToolMode == .deepResearch ? "checkmark.circle.fill" : "text.magnifyingglass"
+                )
             }
         } label: {
             Image(systemName: "plus")
@@ -638,6 +721,14 @@ struct AdaptiveComposerView: View {
     }
 
     private func handleSubmitAction() {
+        if !draft.isEditing,
+           store.onTriggerBtwSlashCommand != nil,
+           BtwPromptBuilder.parseSlashCommand(draft.text).matched {
+            Task {
+                await store.send()
+            }
+            return
+        }
         guard !store.isStreaming, draft.canSubmit else {
             return
         }
@@ -660,6 +751,10 @@ struct AdaptiveComposerView: View {
         }
         if draft.isEditing {
             store.cancelEditing()
+            return
+        }
+        if draft.isQuoteCapAlertVisible {
+            draft.dismissQuoteCapAlert()
             return
         }
         if draft.showsFolderWebFallbackBanner {
@@ -690,12 +785,50 @@ struct AdaptiveComposerView: View {
             guard response == .OK else {
                 return
             }
-            let result = PasteboardAttachmentClassifier.classifyFileURLs(panel.urls)
-            if result.containsDirectory {
-                draft.showsFolderWebFallbackBanner = true
+            let urls = panel.urls
+            Task.detached {
+                let result = PasteboardAttachmentClassifier.classifyFileURLs(urls)
+                await MainActor.run {
+                    if result.containsDirectory {
+                        draft.showsFolderWebFallbackBanner = true
+                    }
+                    if !result.attachments.isEmpty {
+                        draft.addAttachments(result.attachments)
+                    }
+                }
             }
-            if !result.attachments.isEmpty {
-                draft.addAttachments(result.attachments)
+        }
+
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: handleResponse)
+        } else {
+            panel.begin(completionHandler: handleResponse)
+        }
+    }
+
+    private func presentFolderOpenPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.resolvesAliases = true
+        panel.prompt = String(localized: "Attach")
+        panel.title = String(localized: "Upload Code Folder")
+
+        let handleResponse: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let folderURL = panel.url else {
+                return
+            }
+            Task.detached {
+                let scanned = FolderAttachmentScanner.scanDirectory(folderURL)
+                await MainActor.run {
+                    if let scanned {
+                        draft.showsFolderWebFallbackBanner = false
+                        draft.addAttachments([scanned])
+                    } else {
+                        draft.showsFolderWebFallbackBanner = true
+                    }
+                }
             }
         }
 

@@ -39,7 +39,9 @@ Unlike bloated Electron-based apps, Lite Gemini is built entirely with native Sw
 
 ### 🖥️ Deep System Integration
 
-- **Native Liquid Glass & Classic Web Dual Mode** — Native macOS Liquid Glass UI by default, with one-shortcut switching (<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>) to Classic Web Mode whenever you need full web features like Canvas or folder uploads.
+- **Native Liquid Glass & Classic Web Dual Mode** — Native macOS Liquid Glass UI by default, with one-shortcut switching (<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>M</kbd>) to Classic Web Mode whenever needed.
+- **Rich Native Rendering & Canvas** — Native CoreText LaTeX math typesetting, 120Hz syntax-highlighted code blocks, Deep Research plan confirmation & report reader, smart codebase folder uploads, and a side-by-side Canvas Split Pane with sandboxed live HTML/SVG preview.
+- **Conversational Power Tools** — Highlight-to-quote follow-ups (<kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>'</kbd>), isolated `Btw` ephemeral side-question panel (`/btw` or <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>B</kbd>), per-turn conversation branching & regenerate variants, public share links & `.md`/`PDF`/Docs/Gmail/Colab export, <kbd>Cmd</kbd> + <kbd>K</kbd> hybrid local + cloud semantic search, and neural cloud TTS playback.
 - **Quick Mode Floating Panel** — Press <kbd>Opt</kbd> + <kbd>Space</kbd> for a compact Spotlight-style prompt bar that expands into a pinned mini-window after sending; press <kbd>Opt</kbd> + <kbd>Shift</kbd> + <kbd>Space</kbd> to jump back into your most recent Quick conversation.
 - **Global Hotkey** — Toggle the main window with <kbd>Ctrl</kbd> + <kbd>&#96;</kbd> (customizable or disableable).
 - **New Chat Hotkey** — Start a new conversation with <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> (customizable or disableable).

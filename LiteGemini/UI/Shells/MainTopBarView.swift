@@ -126,6 +126,48 @@ struct MainTopBarView: View {
 
     private var rightActionCluster: some View {
         HStack(spacing: 8) {
+            if !session.turns.isEmpty && !session.isTemporaryChat && !isCompactWidth {
+                ShareExportMenuButton(
+                    style: .topBarOrb,
+                    isBusy: session.isCreatingShareLink || session.isExportingDocument,
+                    isShareLinkAvailable: session.conversationId != nil,
+                    hasPythonCode: session.turns.contains { ShareExportMenuButton.containsPythonCode(in: $0.assistantMarkdown) },
+                    shareLinkLabel: String(localized: "Copy Public Share Link"),
+                    onCreateShareLink: session.conversationId != nil
+                        ? {
+                            Task {
+                                await session.createPublicShareLink(for: nil)
+                            }
+                        }
+                        : nil,
+                    onExportMarkdown: {
+                        session.exportMarkdown(turn: nil)
+                    },
+                    onExportPDF: {
+                        Task {
+                            await session.exportPDF(turn: nil)
+                        }
+                    },
+                    onExportGoogleDocs: {
+                        Task {
+                            await session.exportToCloud(service: .docs, turn: nil)
+                        }
+                    },
+                    onDraftGmail: {
+                        Task {
+                            await session.exportToCloud(service: .gmail, turn: nil)
+                        }
+                    },
+                    onOpenGoogleColab: {
+                        Task {
+                            await session.exportToCloud(service: .colab, turn: nil)
+                        }
+                    }
+                )
+                .liquidGlassID("main-top-share", in: topBarGlassNamespace)
+                .liquidGlassTransitionMaterialize()
+            }
+
             pairedActionCapsule
             accountAvatarButton
         }

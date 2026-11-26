@@ -1,0 +1,149 @@
+name: Gemini Contract & Protocol CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "15 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      fail_on_degraded:
+        description: "Fail the workflow on DEGRADED_FALLBACK_ACTIVE warnings"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-contract-check-${{ github.event_name == 'pull_request' && format('pr-{0}', github.ref) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  live-contract-audit:
+    name: Live Gemini Web Contract Audit (v2.0 + v2.1 + v2.2)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Run Contract Auditor Unit Tests
+        run: |
+          python3 -m unittest discover -s tests/ci -p "test_*.py" -v
+
+      - name: Audit Live Gemini Web Contracts
+        id: audit
+        run: |
+          EXTRA_FLAGS=""
+          if [ "${{ inputs.fail_on_degraded }}" = "true" ]; then
+            EXTRA_FLAGS="--fail-on-degraded"
+          fi
+
+          REPORT_JSON="${RUNNER_TEMP}/contract-report.json"
+          REPORT_MD="${RUNNER_TEMP}/contract-report.md"
+
+          set +e
+          python3 scripts/audit_gemini_contract.py \
+            --selectors-swift LiteGemini/Bridge/GeminiBridgeSelectors.swift \
+            --parser-swift LiteGemini/Bridge/GeminiPayloadParser.swift \
+            --graphql-swift LiteGemini/Bridge/GeminiGraphQLClient.swift \
+            --json-out "$REPORT_JSON" \
+            --markdown-out "$REPORT_MD" \
+            --github-annotations \
+            $EXTRA_FLAGS
+          AUDIT_EXIT=$?
+          set -e
+
+          echo "exit_code=${AUDIT_EXIT}" >> "$GITHUB_OUTPUT"
+          if [ -f "$REPORT_MD" ]; then
+            cat "$REPORT_MD" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Gemini Web Contract Audit — Upstream Fetch Failure (exit ${AUDIT_EXIT})" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Contract Audit Artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gemini-contract-report
+          path: |
+            ${{ runner.temp }}/contract-report.json
+            ${{ runner.temp }}/contract-report.md
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Sync GitHub Issue on Scheduled / Manual Runs
+        if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (steps.audit.outputs.exit_code == '0' || steps.audit.outputs.exit_code == '2')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPORT_JSON="${RUNNER_TEMP}/contract-report.json"
+          REPORT_MD="${RUNNER_TEMP}/contract-report.md"
+          if [ -f "$REPORT_JSON" ] && [ -f "$REPORT_MD" ]; then
+            python3 scripts/sync_contract_issue.py \
+              --report "$REPORT_JSON" \
+              --markdown "$REPORT_MD"
+          fi
+
+      - name: Enforce Contract Gate
+        run: |
+          AUDIT_EXIT="${{ steps.audit.outputs.exit_code }}"
+          if [ "$AUDIT_EXIT" = "2" ]; then
+            echo "::error::Breaking Gemini Web contract drift detected (exit 2). Inspect the Job Summary or contract-report.md artifact for exact file:line diagnostics and discovered live replacements."
+            exit 2
+          elif [ "$AUDIT_EXIT" = "3" ]; then
+            echo "::error::Upstream Gemini Web / static CDN fetch failed after retries (exit 3)."
+            exit 3
+          elif [ "$AUDIT_EXIT" != "0" ]; then
+            echo "::error::Unexpected contract auditor exit code: ${AUDIT_EXIT}"
+            exit "$AUDIT_EXIT"
+          fi
+
+  offline-swift-protocol-tests:
+    name: Offline Swift 6 Protocol & Algorithm Contract Tests
+    runs-on: xcode-27
+    if: github.event_name != 'schedule'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.0.app || sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Compile and Run Offline Contract Tests (Swift 6, -warnings-as-errors)
+        run: |
+          BIN_PATH="${RUNNER_TEMP}/run_offline_contract_tests"
+          trap 'rm -f "$BIN_PATH"' EXIT
+          xcrun --sdk macosx swiftc \
+            -parse-as-library \
+            -swift-version 6 \
+            -default-isolation MainActor \
+            -target arm64-apple-macosx14.0 \
+            -warnings-as-errors \
+            LiteGemini/Domain/AccountModels.swift \
+            LiteGemini/Domain/GeminiURLRoute.swift \
+            LiteGemini/Domain/ChatModels.swift \
+            LiteGemini/Domain/ComposerModels.swift \
+            LiteGemini/Domain/V22Models.swift \
+            LiteGemini/Domain/ChatTransport.swift \
+            LiteGemini/Bridge/GeminiBridgeSelectors.swift \
+            LiteGemini/Bridge/GeminiPayloadParser.swift \
+            LiteGemini/Bridge/GeminiGraphQLClient.swift \
+            LiteGemini/Store/BtwPromptBuilder.swift \
+            LiteGemini/Store/TurnSpeechController.swift \
+            LiteGemini/UI/DesignSystem/LiquidGlass.swift \
+            scripts/run_offline_contract_tests.swift \
+            -o "$BIN_PATH"
+          "$BIN_PATH"

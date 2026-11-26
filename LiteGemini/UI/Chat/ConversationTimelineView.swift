@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - ConversationTimelineView
@@ -9,8 +10,12 @@ struct ConversationTimelineView: View {
     @ObservedObject var store: ChatSessionStore
     var topContentInset: CGFloat = LiquidGlassMetrics.topBarHeight
     var bottomContentInset: CGFloat = 80
+    var isQuickMode: Bool = false
+    var onOpenArtifact: ((ArtifactCardInfo) -> Void)? = nil
     var onOpenInWebMode: ((String?) -> Void)? = nil
     var onSaveInlineImage: ((ImageAttachment) -> Void)? = nil
+    var onQuoteSelection: ((String) -> Void)? = nil
+    var onAskBtwSelection: ((String) -> Void)? = nil
 
     private static let scrollCoordinateSpace = "lgConversationTimelineScrollSpace"
     private static let bottomAnchorID = "lg-timeline-bottom-anchor"
@@ -23,6 +28,7 @@ struct ConversationTimelineView: View {
     @State private var showsScrollToBottomPill = false
     @State private var viewportSize: CGSize = CGSize(width: 640, height: 500)
     @State private var scrollTracker = TimelineScrollTracker()
+    @State private var selectionPillController = ResponseSelectionPillController()
     @State private var isHoveringScrollPill = false
 
     private var horizontalPadding: CGFloat {
@@ -84,31 +90,7 @@ struct ConversationTimelineView: View {
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(store.turns.enumerated()), id: \.element.id) { index, turn in
-                            let isLatest = (index == store.turns.count - 1)
-                            let isTurnStreaming = isLatest && (store.isStreaming || activeStreamingTurnId == turn.id)
-
-                            ChatTurnRowView(
-                                turn: turn,
-                                containerWidth: effectiveColumnWidth,
-                                isLatestTurn: isLatest,
-                                isStreaming: isTurnStreaming,
-                                canEdit: isLatest && store.canEditLastTurn,
-                                canRegenerate: isLatest && store.canRegenerateLastTurn,
-                                onEdit: {
-                                    store.beginEditingLastTurn()
-                                },
-                                onRegenerate: {
-                                    Task {
-                                        await store.regenerateLastTurn()
-                                    }
-                                },
-                                onOpenInWebMode: onOpenInWebMode.map { handler in
-                                    { handler(store.conversationId) }
-                                },
-                                onSaveInlineImage: onSaveInlineImage
-                            )
-                            .padding(.bottom, isLatest ? contentBottomPadding : 24)
-                            .id(turn.id)
+                            turnRow(for: turn, index: index)
                         }
 
                         if store.turns.isEmpty {
@@ -140,11 +122,22 @@ struct ConversationTimelineView: View {
                 )
                 .coordinateSpace(name: Self.scrollCoordinateSpace)
                 .background(
-                    GeometryReader { viewportGeometry in
-                        Color.clear.preference(
-                            key: TimelineViewportSizePreferenceKey.self,
-                            value: viewportGeometry.size
-                        )
+                    ZStack {
+                        GeometryReader { viewportGeometry in
+                            Color.clear.preference(
+                                key: TimelineViewportSizePreferenceKey.self,
+                                value: viewportGeometry.size
+                            )
+                        }
+
+                        if !isQuickMode && (onQuoteSelection != nil || onAskBtwSelection != nil) {
+                            ResponseSelectionMonitorBridge(
+                                controller: selectionPillController,
+                                onQuote: onQuoteSelection,
+                                onAskBtw: onAskBtwSelection
+                            )
+                            .allowsHitTesting(false)
+                        }
                     }
                 )
                 .onPreferenceChange(TimelineViewportSizePreferenceKey.self) { newSize in
@@ -176,6 +169,7 @@ struct ConversationTimelineView: View {
             }
             .animation(LiquidGlassMotion.materialize(reduceMotion: reduceMotion), value: showsScrollToBottomPill)
             .onChange(of: store.conversationId) { _, _ in
+                selectionPillController.dismiss()
                 reengageAutoScrollAndJump(proxy: scrollProxy, animated: false)
             }
             .onChange(of: store.turns.count) { oldCount, newCount in
@@ -207,7 +201,78 @@ struct ConversationTimelineView: View {
                     }
                 }
             }
+            .onDisappear {
+                selectionPillController.detach()
+            }
         }
+    }
+
+    // MARK: - Turn Row Builder
+
+    private func turnRow(for turn: ChatTurn, index: Int) -> some View {
+        let isLatest = (index == store.turns.count - 1)
+        let isTurnStreaming = isLatest && (store.isStreaming || activeStreamingTurnId == turn.id)
+        let allowsServerTurnActions = !isQuickMode && !store.isTemporaryChat && store.conversationId != nil
+
+        let branchAction: (() -> Void)? = allowsServerTurnActions
+            ? { Task { await store.branchFromTurn(turn) } }
+            : nil
+        let shareTurnAction: (() -> Void)? = allowsServerTurnActions
+            ? { Task { await store.createPublicShareLink(for: turn) } }
+            : nil
+        let shareChatAction: (() -> Void)? = allowsServerTurnActions
+            ? { Task { await store.createPublicShareLink(for: nil) } }
+            : nil
+        let openInWebAction: (() -> Void)? = onOpenInWebMode.map { handler in
+            { handler(store.conversationId) }
+        }
+
+        return ChatTurnRowView(
+            turn: turn,
+            containerWidth: effectiveColumnWidth,
+            isLatestTurn: isLatest,
+            isStreaming: isTurnStreaming,
+            canEdit: isLatest && store.canEditLastTurn,
+            canRegenerate: isLatest && store.canRegenerateLastTurn,
+            onEdit: { store.beginEditingLastTurn() },
+            onRegenerate: { Task { await store.regenerateLastTurn() } },
+            onRegenerateVariant: { variant, modelId in
+                Task { await store.regenerateLatestTurn(variant: variant, modelId: modelId) }
+            },
+            isQuickMode: isQuickMode,
+            isTemporaryChat: store.isTemporaryChat,
+            availableModels: store.availableModels,
+            selectedModelId: store.selectedModelId,
+            isBranchingThisTurn: store.branchingTurnId == turn.id,
+            isShareExportBusy: store.isCreatingShareLink || store.isExportingDocument,
+            speechController: store.speechController,
+            onSynthesizeSpeechChunk: { [weak store] chunkText, locale in
+                await store?.synthesizeSpeechChunk(text: chunkText, locale: locale)
+            },
+            onBranchFromTurn: branchAction,
+            onShareThisTurn: shareTurnAction,
+            onShareEntireChat: shareChatAction,
+            onExportTurnMarkdown: { store.exportMarkdown(turn: turn) },
+            onExportTurnPDF: { Task { await store.exportPDF(turn: turn) } },
+            onExportGoogleDocs: { Task { await store.exportToCloud(service: .docs, turn: turn) } },
+            onDraftGmail: { Task { await store.exportToCloud(service: .gmail, turn: turn) } },
+            onOpenGoogleColab: { Task { await store.exportToCloud(service: .colab, turn: turn) } },
+            onOpenArtifact: { artifact in
+                if let onOpenArtifact {
+                    onOpenArtifact(artifact)
+                } else {
+                    store.selectedArtifact = artifact
+                }
+            },
+            onConfirmResearchPlan: { artifact in
+                Task { await store.confirmDeepResearchPlan(for: artifact) }
+            },
+            onEditResearchPlan: { store.beginEditingLastTurn() },
+            onOpenInWebMode: openInWebAction,
+            onSaveInlineImage: onSaveInlineImage
+        )
+        .padding(.bottom, isLatest ? contentBottomPadding : 24)
+        .id(turn.id)
     }
 
     // MARK: - Floating Scroll-to-Bottom Pill
@@ -280,6 +345,10 @@ struct ConversationTimelineView: View {
             return
         }
 
+        if let previousOffsetY, abs(scrollOffsetY - previousOffsetY) > 2 {
+            selectionPillController.handleScrollDidOccur()
+        }
+
         let userScrolledUpward = (previousOffsetY != nil) && (scrollOffsetY < (previousOffsetY ?? scrollOffsetY) - 6)
 
         if userScrolledUpward && distanceFromBottom > 36 {
@@ -344,6 +413,70 @@ private nonisolated struct TimelineViewportSizePreferenceKey: PreferenceKey {
     static func reduce(value: inout CGSize?, nextValue: () -> CGSize?) {
         if let next = nextValue() {
             value = next
+        }
+    }
+}
+
+// MARK: - ResponseSelectionMonitorBridge
+
+/// Lightweight AppKit host view attaching `ResponseSelectionPillController` to the Main Window's
+/// conversation timeline viewport without stealing hit testing or altering SwiftUI identity.
+private struct ResponseSelectionMonitorBridge: NSViewRepresentable {
+
+    let controller: ResponseSelectionPillController
+    let onQuote: ((String) -> Void)?
+    let onAskBtw: ((String) -> Void)?
+
+    func makeNSView(context: Context) -> MonitorAnchorNSView {
+        let view = MonitorAnchorNSView()
+        view.controller = controller
+        view.onQuote = onQuote
+        view.onAskBtw = onAskBtw
+        return view
+    }
+
+    func updateNSView(_ nsView: MonitorAnchorNSView, context: Context) {
+        nsView.controller = controller
+        nsView.onQuote = onQuote
+        nsView.onAskBtw = onAskBtw
+        nsView.syncAttachment()
+    }
+
+    static func dismantleNSView(_ nsView: MonitorAnchorNSView, coordinator: ()) {
+        nsView.detach()
+    }
+
+    final class MonitorAnchorNSView: NSView {
+        weak var controller: ResponseSelectionPillController?
+        var onQuote: ((String) -> Void)?
+        var onAskBtw: ((String) -> Void)?
+        private var isAttached: Bool = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            syncAttachment()
+        }
+
+        func syncAttachment() {
+            controller?.onQuote = onQuote
+            controller?.onAskBtw = onAskBtw
+
+            if window != nil {
+                if !isAttached {
+                    controller?.attach(to: self, onQuote: onQuote, onAskBtw: onAskBtw)
+                    isAttached = true
+                }
+            } else if isAttached {
+                controller?.detach()
+                isAttached = false
+            }
+        }
+
+        func detach() {
+            if isAttached {
+                controller?.detach()
+                isAttached = false
+            }
         }
     }
 }

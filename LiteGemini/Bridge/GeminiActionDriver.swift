@@ -30,6 +30,9 @@ final class GeminiActionDriver {
     /// Brief wait window after clicking Regenerate to detect an optional `.cdk-overlay-container` menu
     static let defaultRegenerateMenuWait: Duration = .milliseconds(250)
 
+    /// Automatic retry delay when `useCreatePublicShareLinkMutation` returns transient error `1218`
+    static let defaultShareRetryDelay: Duration = .milliseconds(2000)
+
     private static let logger = Logger(subsystem: "io.github.tdhsc.LiteGemini", category: "GeminiBridge")
 
     // MARK: - Configuration
@@ -39,6 +42,8 @@ final class GeminiActionDriver {
     let pollInterval: Duration
     let maxAttachmentBytes: Int
     let regenerateMenuWait: Duration
+    let shareRetryDelay: Duration
+    let graphQLClient: GeminiGraphQLClient
 
     // MARK: - Initialization
 
@@ -47,13 +52,17 @@ final class GeminiActionDriver {
         pasteFallbackDelay: Duration = GeminiActionDriver.defaultPasteFallbackDelay,
         pollInterval: Duration = GeminiActionDriver.defaultPollInterval,
         maxAttachmentBytes: Int = GeminiActionDriver.defaultMaxAttachmentBytes,
-        regenerateMenuWait: Duration = GeminiActionDriver.defaultRegenerateMenuWait
+        regenerateMenuWait: Duration = GeminiActionDriver.defaultRegenerateMenuWait,
+        shareRetryDelay: Duration = GeminiActionDriver.defaultShareRetryDelay,
+        graphQLClient: GeminiGraphQLClient? = nil
     ) {
         self.timeout = timeout
         self.pasteFallbackDelay = pasteFallbackDelay
         self.pollInterval = pollInterval
         self.maxAttachmentBytes = maxAttachmentBytes
         self.regenerateMenuWait = regenerateMenuWait
+        self.shareRetryDelay = shareRetryDelay
+        self.graphQLClient = graphQLClient ?? GeminiGraphQLClient(timeout: timeout)
     }
 
     // MARK: - Attachments
@@ -505,6 +514,529 @@ final class GeminiActionDriver {
         Self.logger.notice("regenerateLatestTurn: direct regenerate triggered elapsedMs=\(elapsedMs, privacy: .public)")
     }
 
+    // MARK: - v2.2 Conversational Power Tools (Dual-Path GraphQL + DOM)
+
+    /// Formats optional staged `quotes` as Markdown blockquotes above `text` and submits the prompt.
+    func submitPrompt(
+        text: String,
+        quotes: [QuotedPassage],
+        attachments: [StagedAttachment],
+        in webView: WKWebView
+    ) async throws {
+        let combinedText = QuotedPassage.formatPrompt(text, with: quotes)
+        try await submitPrompt(text: combinedText, attachments: attachments, in: webView)
+    }
+
+    /// Regenerates the latest assistant response with the requested `variant` and optional `modelId` switch.
+    func regenerateLatestResponse(
+        variant: RegenerateVariant,
+        modelId: String?,
+        in webView: WKWebView
+    ) async throws {
+        let trimmedModelId = modelId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedModelId, !trimmedModelId.isEmpty {
+            try? await selectModel(id: trimmedModelId, in: webView)
+        }
+
+        if variant == .tryAgain {
+            try await regenerateLatestTurn(in: webView)
+            return
+        }
+
+        let startedAt = ContinuousClock.now
+        let deadline = startedAt + timeout
+
+        if variant == .retryWithoutTools {
+            let direct = try await invokeJS(
+                Self.clickLatestTurnScopedButtonScript,
+                arguments: [
+                    "containerSelectors": GeminiBridgeSelectors.ConversationDOM.modelResponse.all,
+                    "buttonSelectors": GeminiBridgeSelectors.ConversationDOM.retryWithoutToolButton.all,
+                    "scopePrefix": GeminiBridgeSelectors.ConversationDOM.modelResponse.primary + " "
+                ],
+                in: webView,
+                action: "regenerateVariant.retryWithoutTools.direct"
+            )
+            if boolValue(direct["clicked"]) {
+                Self.logger.notice("regenerateLatestResponse: clicked direct retry-without-tools")
+                return
+            }
+
+            let triggers: [[String]] = [
+                GeminiBridgeSelectors.ConversationDOM.regenerateButton.all,
+                GeminiBridgeSelectors.ConversationDOM.moreActionsButton.all
+            ]
+            for triggerSelectors in triggers {
+                if try await openOverlayAndPickVariant(
+                    triggerSelectors: triggerSelectors,
+                    variant: .retryWithoutTools,
+                    in: webView,
+                    deadline: deadline
+                ) {
+                    let elapsedMs = elapsedMilliseconds(since: startedAt)
+                    Self.logger.notice(
+                        "regenerateLatestResponse: triggered retryWithoutTools elapsedMs=\(elapsedMs, privacy: .public)"
+                    )
+                    return
+                }
+            }
+
+            throw ChatTransportError.actionDriverFailed(
+                reason: "Retry without tools is unavailable for the latest response."
+            )
+        }
+
+        // Tone/length modifiers: try Modify Response menu first, then Regenerate menu (`1004`/`1005`).
+        let triggerGroups: [[String]] = [
+            GeminiBridgeSelectors.ConversationDOM.modifyResponseButton.all,
+            GeminiBridgeSelectors.ConversationDOM.regenerateButton.all
+        ]
+
+        for triggerSelectors in triggerGroups {
+            if try await openOverlayAndPickVariant(
+                triggerSelectors: triggerSelectors,
+                variant: variant,
+                in: webView,
+                deadline: deadline
+            ) {
+                let elapsedMs = elapsedMilliseconds(since: startedAt)
+                Self.logger.notice(
+                    "regenerateLatestResponse: triggered variant=\(variant.rawValue, privacy: .public) elapsedMs=\(elapsedMs, privacy: .public)"
+                )
+                return
+            }
+        }
+
+        throw ChatTransportError.actionDriverFailed(
+            reason: "Regenerate variant '\(variant.rawValue)' is unavailable for the current model response."
+        )
+    }
+
+    /// Branches a conversation from the given turn into a new chat, returning the new `conversationId`.
+    ///
+    /// Path A executes `ChatResponseActionBarBranchMutation` via Omakase GraphQL (with dynamic
+    /// `persistedQueryId` discovery). Path B falls back to clicking `[data-test-id="branch-button"]`
+    /// inside `<model-response>` and observing the SPA `/app/<newConversationId>` navigation.
+    func branchConversation(
+        conversationId: String,
+        requestId: String?,
+        responseId: String?,
+        in webView: WKWebView
+    ) async -> String? {
+        let trimmedConversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Path A: Omakase GraphQL primary (verified token with dynamic rotation fallback).
+        if !trimmedConversationId.isEmpty {
+            var requestPayload: [String: Any] = [
+                "conversationId": GeminiGraphQLClient.canonicalConversationId(trimmedConversationId)
+            ]
+            if let req = requestId?.trimmingCharacters(in: .whitespacesAndNewlines), !req.isEmpty {
+                requestPayload["requestId"] = req
+            }
+            if let resp = responseId?.trimmingCharacters(in: .whitespacesAndNewlines), !resp.isEmpty {
+                requestPayload["responseId"] = resp
+            }
+
+            typealias Gateway = GeminiBridgeSelectors.GraphQLGateway
+            let primaryPersistedId = Gateway.PersistedQuery.branchConversation
+            let operationName = Gateway.OperationName.branchConversation
+
+            do {
+                let response = try await graphQLClient.execute(
+                    operationName: operationName,
+                    persistedQueryId: primaryPersistedId,
+                    variables: ["request": requestPayload],
+                    in: webView
+                )
+                if let newId = GeminiGraphQLClient.decodeBranchConversationId(from: response) {
+                    Self.logger.notice("branchConversation: succeeded via GraphQL")
+                    return newId
+                }
+            } catch {
+                Self.logger.notice(
+                    "branchConversation: primary GraphQL token failed (\(error.localizedDescription, privacy: .public)); checking dynamic persistedQueryId lookup"
+                )
+            }
+
+            if let discoveredId = await graphQLClient.resolvePersistedQueryId(for: operationName, in: webView),
+               discoveredId != primaryPersistedId {
+                do {
+                    let retryResponse = try await graphQLClient.execute(
+                        operationName: operationName,
+                        persistedQueryId: discoveredId,
+                        variables: ["request": requestPayload],
+                        in: webView
+                    )
+                    if let newId = GeminiGraphQLClient.decodeBranchConversationId(from: retryResponse) {
+                        Self.logger.notice("branchConversation: succeeded via dynamic GraphQL lookup")
+                        return newId
+                    }
+                } catch {
+                    Self.logger.notice(
+                        "branchConversation: dynamic GraphQL lookup failed (\(error.localizedDescription, privacy: .public)); attempting DOM fallback"
+                    )
+                }
+            }
+        }
+
+        // Path B: DOM fallback — click branch button and observe SPA URL transition to `/app/<id>`.
+        let initialRouteId = webView.url.flatMap(GeminiURLRoute.parse)?.conversationId
+        let normalizedSource = trimmedConversationId.hasPrefix("c_")
+            ? String(trimmedConversationId.dropFirst(2))
+            : trimmedConversationId
+
+        do {
+            let clickResult = try await invokeJS(
+                Self.clickTurnBranchButtonScript,
+                arguments: [
+                    "containerSelectors": GeminiBridgeSelectors.ConversationDOM.modelResponse.all,
+                    "branchSelectors": GeminiBridgeSelectors.ConversationDOM.branchButton.all,
+                    "moreSelectors": GeminiBridgeSelectors.ConversationDOM.moreActionsButton.all,
+                    "overlayItemSelectors": GeminiBridgeSelectors.ConversationDOM.overlayMenuItems.all,
+                    "scopePrefix": GeminiBridgeSelectors.ConversationDOM.modelResponse.primary + " ",
+                    "requestId": requestId ?? "",
+                    "responseId": responseId ?? ""
+                ],
+                in: webView,
+                action: "branchConversation.domClick"
+            )
+            guard boolValue(clickResult["clicked"]) else {
+                Self.logger.notice("branchConversation: DOM branch button not found")
+                return nil
+            }
+        } catch {
+            Self.logger.error("branchConversation: DOM fallback failed (\(error.localizedDescription, privacy: .public))")
+            return nil
+        }
+
+        let navWait = timeout < .seconds(6) ? timeout : .seconds(6)
+        let deadline = ContinuousClock.now + navWait
+        while ContinuousClock.now < deadline {
+            if Task.isCancelled { return nil }
+            if let observed = webView.url.flatMap(GeminiURLRoute.parse)?.conversationId,
+               !observed.isEmpty,
+               observed != initialRouteId,
+               observed != trimmedConversationId,
+               observed != normalizedSource {
+                Self.logger.notice("branchConversation: succeeded via DOM SPA navigation")
+                if trimmedConversationId.hasPrefix("c_"), !observed.hasPrefix("c_") {
+                    return "c_\(observed)"
+                }
+                return observed
+            }
+            do {
+                try await sleepStep(until: deadline)
+            } catch {
+                return nil
+            }
+        }
+
+        return nil
+    }
+
+    /// Creates a public `gemini.google.com/share/<id>` link via `useCreatePublicShareLinkMutation`.
+    ///
+    /// Automatically retries once after `shareRetryDelay` (`2000ms`) on transient `BardErrorInfo`
+    /// error `1218` (`SHARE_ERROR_TARGET_NOT_PERSISTED`), and falls back to the DOM share dialog
+    /// if the GraphQL transport itself is unreachable.
+    func createPublicShareLink(
+        conversationId: String,
+        scope: ShareLinkScope,
+        selectedDraftId: String?,
+        in webView: WKWebView
+    ) async throws -> ShareLinkResult {
+        let trimmedConversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedConversationId.isEmpty else {
+            throw GeminiTransportActionError.invalidArguments("Cannot share a conversation without an ID.")
+        }
+
+        let target: Any
+        let fallbackDraftId: String?
+        switch scope {
+        case .entireConversation:
+            target = NSNull()
+            fallbackDraftId = nil
+        case .singleTurn(let requestId, let responseId):
+            let trimmedRequest = requestId.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedRequest.isEmpty else {
+                throw GeminiTransportActionError.invalidArguments("Single-turn share requires a request ID.")
+            }
+            target = ["requestId": trimmedRequest]
+            fallbackDraftId = responseId
+        }
+
+        let resolvedDraftId = [selectedDraftId, fallbackDraftId]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty })
+
+        let variables: [String: Any] = [
+            "conversationId": GeminiGraphQLClient.canonicalConversationId(trimmedConversationId),
+            "target": target,
+            "lastTurnSelectedDraftId": resolvedDraftId ?? NSNull(),
+            "shareDestination": NSNull(),
+            "landingPageMetadata": NSNull()
+        ]
+
+        typealias Gateway = GeminiBridgeSelectors.GraphQLGateway
+
+        func runMutation() async throws -> ShareLinkResult {
+            let response = try await graphQLClient.execute(
+                operationName: Gateway.OperationName.createPublicShareLink,
+                persistedQueryId: Gateway.PersistedQuery.createPublicShareLink,
+                variables: variables,
+                in: webView
+            )
+            return try GeminiGraphQLClient.decodeShareLinkResult(from: response)
+        }
+
+        do {
+            return try await runMutation()
+        } catch GeminiTransportActionError.targetNotPersisted {
+            Self.logger.notice("createPublicShareLink: received error 1218 (target not persisted); retrying once after 2000ms")
+            try await Task.sleep(for: shareRetryDelay)
+            return try await runMutation()
+        } catch let error as GeminiTransportActionError {
+            if case .fallbackUnavailable = error,
+               scope == .entireConversation,
+               let fallback = await attemptDOMShareLinkFallback(in: webView) {
+                Self.logger.notice("createPublicShareLink: succeeded via DOM share dialog fallback")
+                return fallback
+            }
+            throw error
+        }
+    }
+
+    /// Exports a Markdown message to Google Docs, Gmail Drafts, Colab, or Sheets via `useExportMessageMutation`.
+    func exportToCloudService(
+        service: CloudExportService,
+        title: String,
+        markdownText: String,
+        in webView: WKWebView
+    ) async throws -> URL {
+        guard !markdownText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw GeminiTransportActionError.invalidArguments("Cannot export an empty message.")
+        }
+
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTitle = trimmedTitle.isEmpty ? "Gemini Export" : trimmedTitle
+
+        let variables: [String: Any] = [
+            "request": [
+                "exportServiceType": service.rawValue,
+                "title": resolvedTitle,
+                "textMessage": markdownText
+            ]
+        ]
+
+        typealias Gateway = GeminiBridgeSelectors.GraphQLGateway
+        let response = try await graphQLClient.execute(
+            operationName: Gateway.OperationName.exportMessage,
+            persistedQueryId: Gateway.PersistedQuery.exportMessage,
+            variables: variables,
+            in: webView
+        )
+        return try GeminiGraphQLClient.decodeExportArtifactURL(from: response, service: service)
+    }
+
+    /// Queries Gemini's remote semantic history search via `SearchChatsPageQuery`.
+    func searchRemoteConversations(
+        query: String,
+        limit: Int,
+        in webView: WKWebView
+    ) async -> [ConversationSearchHit] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty, limit > 0 else {
+            return []
+        }
+
+        let variables: [String: Any] = [
+            "query": trimmedQuery,
+            "queryEmpty": false,
+            "excludeMonothreadTaskConversations": true,
+            "includeEnterpriseStatus": false,
+            "pageSize": limit
+        ]
+
+        typealias Gateway = GeminiBridgeSelectors.GraphQLGateway
+        do {
+            let response = try await graphQLClient.execute(
+                operationName: Gateway.OperationName.searchChats,
+                persistedQueryId: Gateway.PersistedQuery.searchChats,
+                variables: variables,
+                in: webView
+            )
+            return GeminiGraphQLClient.decodeSearchHits(from: response, limit: limit)
+        } catch {
+            Self.logger.notice(
+                "searchRemoteConversations: GraphQL query failed (\(error.localizedDescription, privacy: .public))"
+            )
+            return []
+        }
+    }
+
+    /// Synthesizes neural MP3 audio for `text` in `locale` via `useResponseTtsQuery`, decoding `base64url` into `Data`.
+    func synthesizeSpeechChunk(
+        text: String,
+        locale: String,
+        in webView: WKWebView
+    ) async -> Data? {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else {
+            return nil
+        }
+
+        let trimmedLocale = locale.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedLocale = trimmedLocale.isEmpty ? "en-US" : trimmedLocale
+
+        let variables: [String: Any] = [
+            "request": [
+                "appId": "TTS_APP_ID_BARD",
+                "text": trimmedText,
+                "locale": resolvedLocale,
+                "audioEncoding": "TTS_ENCODING_MP3"
+            ]
+        ]
+
+        typealias Gateway = GeminiBridgeSelectors.GraphQLGateway
+        do {
+            let response = try await graphQLClient.execute(
+                operationName: Gateway.OperationName.responseTts,
+                persistedQueryId: Gateway.PersistedQuery.responseTts,
+                variables: variables,
+                in: webView
+            )
+            return GeminiGraphQLClient.decodeAudioData(from: response)
+        } catch {
+            Self.logger.notice(
+                "synthesizeSpeechChunk: GraphQL TTS failed (\(error.localizedDescription, privacy: .public))"
+            )
+            return nil
+        }
+    }
+
+    /// DOM fallback that clicks Gemini's `<tts-control-v2>` listen button on the latest `model-response`.
+    func triggerDOMSpeechPlayback(in webView: WKWebView) async -> Bool {
+        do {
+            let result = try await invokeJS(
+                Self.clickLatestTurnScopedButtonScript,
+                arguments: [
+                    "containerSelectors": GeminiBridgeSelectors.ConversationDOM.modelResponse.all,
+                    "buttonSelectors": GeminiBridgeSelectors.ConversationDOM.ttsControl.all,
+                    "scopePrefix": GeminiBridgeSelectors.ConversationDOM.modelResponse.primary + " "
+                ],
+                in: webView,
+                action: "triggerDOMSpeechPlayback"
+            )
+            return boolValue(result["clicked"])
+        } catch {
+            return false
+        }
+    }
+
+    // MARK: - Private v2.2 Helpers
+
+    private func openOverlayAndPickVariant(
+        triggerSelectors: [String],
+        variant: RegenerateVariant,
+        in webView: WKWebView,
+        deadline: ContinuousClock.Instant
+    ) async throws -> Bool {
+        let triggerResult = try await invokeJS(
+            Self.clickLatestTurnScopedButtonScript,
+            arguments: [
+                "containerSelectors": GeminiBridgeSelectors.ConversationDOM.modelResponse.all,
+                "buttonSelectors": triggerSelectors,
+                "scopePrefix": GeminiBridgeSelectors.ConversationDOM.modelResponse.primary + " "
+            ],
+            in: webView,
+            action: "regenerateVariant.openTrigger"
+        )
+        guard boolValue(triggerResult["clicked"]) else {
+            return false
+        }
+
+        let menuWait = regenerateMenuWait > .milliseconds(450) ? regenerateMenuWait : .milliseconds(450)
+        let menuDeadline = min(deadline, ContinuousClock.now + menuWait)
+        let (testIdHints, keywords) = Self.variantMatchingHints(for: variant)
+        let optionCodeString = variant.geminiOptionCode.map(String.init) ?? ""
+
+        while true {
+            try Task.checkCancellation()
+            let pickResult = try await invokeJS(
+                Self.clickOverlayVariantOptionScript,
+                arguments: [
+                    "itemSelectors": GeminiBridgeSelectors.ConversationDOM.overlayMenuItems.all,
+                    "explicitSelectors": variant == .retryWithoutTools
+                        ? GeminiBridgeSelectors.ConversationDOM.retryWithoutToolButton.all
+                        : [],
+                    "optionCode": optionCodeString,
+                    "testIdHints": testIdHints,
+                    "keywords": keywords
+                ],
+                in: webView,
+                action: "regenerateVariant.pickOption"
+            )
+            if boolValue(pickResult["clicked"]) {
+                return true
+            }
+            if ContinuousClock.now >= menuDeadline {
+                break
+            }
+            try await sleepStep(until: menuDeadline)
+        }
+
+        _ = try? await invokeJS(
+            Self.dismissOverlayScript,
+            arguments: [:],
+            in: webView,
+            action: "regenerateVariant.dismissOverlay"
+        )
+        return false
+    }
+
+    private func attemptDOMShareLinkFallback(in webView: WKWebView) async -> ShareLinkResult? {
+        do {
+            let result = try await invokeJS(
+                Self.domCreateShareLinkScript,
+                arguments: [
+                    "shareSelectors": GeminiBridgeSelectors.ConversationDOM.shareButton.all,
+                    "overlayItemSelectors": GeminiBridgeSelectors.ConversationDOM.overlayMenuItems.all
+                ],
+                in: webView,
+                action: "createPublicShareLink.domFallback"
+            )
+            if boolValue(result["ok"]),
+               let rawURL = (result["url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               let url = URL(string: rawURL),
+               url.scheme?.lowercased() == "https" {
+                let externalId = url.lastPathComponent.isEmpty ? nil : url.lastPathComponent
+                return ShareLinkResult(url: url, externalUrlId: externalId, shareToken: nil)
+            }
+        } catch {
+            Self.logger.notice("createPublicShareLink: DOM fallback failed (\(error.localizedDescription, privacy: .public))")
+        }
+        return nil
+    }
+
+    private nonisolated static func variantMatchingHints(for variant: RegenerateVariant) -> (testIds: [String], keywords: [String]) {
+        switch variant {
+        case .tryAgain:
+            return (["regenerate-option", "try-again", "redo"], ["try again", "redo", "regenerate", "重试", "重新生成"])
+        case .shorter:
+            return (["shorter", "modify-shorter"], ["shorter", "更精简", "更短", "简短"])
+        case .longer:
+            return (["longer", "modify-longer"], ["longer", "更详细", "更长", "详细"])
+        case .simpler:
+            return (["simpler", "modify-simpler"], ["simpler", "更通俗", "更简单", "通俗"])
+        case .casual:
+            return (["casual", "modify-casual"], ["more casual", "casual", "更口语", "更随意", "口语"])
+        case .professional:
+            return (["professional", "modify-professional"], ["more professional", "professional", "更正式", "更专业", "正式"])
+        case .retryWithoutTools:
+            return (["retry-without-tool-button", "without-tool"], ["retry without tools", "without tools", "不使用工具"])
+        }
+    }
+
     // MARK: - New Chat
 
     /// Clicks Gemini's in-page New Chat trigger if present and enabled.
@@ -544,8 +1076,31 @@ final class GeminiActionDriver {
     ) async throws {
         guard !attachments.isEmpty else { return }
 
+        let folderAttachments = attachments.filter(\.isFolder)
+        var regularAttachments = attachments.filter { !$0.isFolder }
+
+        for folder in folderAttachments {
+            let stagedNatively = try await stageFolderAttachment(folder, in: webView, deadline: deadline)
+            if !stagedNatively, let entries = folder.folderEntries, !entries.isEmpty {
+                let consolidated = FolderAttachmentScanner.buildConsolidatedTextBundle(
+                    folderName: folder.filename,
+                    entries: entries
+                )
+                regularAttachments.append(
+                    StagedAttachment(
+                        filename: consolidated.filename,
+                        mimeType: consolidated.mimeType,
+                        data: consolidated.data,
+                        isImage: false
+                    )
+                )
+            }
+        }
+
+        guard !regularAttachments.isEmpty else { return }
+
         var totalBytes = 0
-        for attachment in attachments {
+        for attachment in regularAttachments {
             if attachment.data.isEmpty {
                 Self.logger.error("stageAttachments: rejected empty attachment")
                 throw ChatTransportError.attachmentRejected(
@@ -565,7 +1120,7 @@ final class GeminiActionDriver {
         }
 
         let startedAt = ContinuousClock.now
-        let encodedFiles: [[String: Any]] = attachments.map { item in
+        let encodedFiles: [[String: Any]] = regularAttachments.map { item in
             let safeName = item.filename.isEmpty ? "attachment" : item.filename
             let trimmedMime = item.mimeType.trimmingCharacters(in: .whitespacesAndNewlines)
             let safeMime = trimmedMime.isEmpty ? "application/octet-stream" : trimmedMime
@@ -606,7 +1161,7 @@ final class GeminiActionDriver {
             )
         }
 
-        let expectedPreviewCount = initialPreviewCount + attachments.count
+        let expectedPreviewCount = initialPreviewCount + regularAttachments.count
         let pasteFallbackDeadline = min(deadline, ContinuousClock.now + pasteFallbackDelay)
         var pasteIncrementedPreviews = false
 
@@ -616,7 +1171,7 @@ final class GeminiActionDriver {
             if status.previewCount >= expectedPreviewCount && status.spinnerCount == 0 {
                 let elapsedMs = elapsedMilliseconds(since: startedAt)
                 Self.logger.notice(
-                    "stageAttachments: ready via paste count=\(attachments.count, privacy: .public) bytes=\(totalBytes, privacy: .public) elapsedMs=\(elapsedMs, privacy: .public)"
+                    "stageAttachments: ready via paste count=\(regularAttachments.count, privacy: .public) bytes=\(totalBytes, privacy: .public) elapsedMs=\(elapsedMs, privacy: .public)"
                 )
                 return
             }
@@ -680,7 +1235,7 @@ final class GeminiActionDriver {
                 let elapsedMs = elapsedMilliseconds(since: startedAt)
                 let path = pasteIncrementedPreviews ? "paste" : "fileInput"
                 Self.logger.notice(
-                    "stageAttachments: ready via \(path, privacy: .public) count=\(attachments.count, privacy: .public) bytes=\(totalBytes, privacy: .public) elapsedMs=\(elapsedMs, privacy: .public)"
+                    "stageAttachments: ready via \(path, privacy: .public) count=\(regularAttachments.count, privacy: .public) bytes=\(totalBytes, privacy: .public) elapsedMs=\(elapsedMs, privacy: .public)"
                 )
                 return
             }
@@ -696,12 +1251,215 @@ final class GeminiActionDriver {
         if lastStatus.previewCount < expectedPreviewCount {
             let observedNew = max(0, lastStatus.previewCount - initialPreviewCount)
             throw ChatTransportError.actionDriverFailed(
-                reason: "Timed out waiting for \(attachments.count) attachment preview(s) to appear (detected \(observedNew))."
+                reason: "Timed out waiting for \(regularAttachments.count) attachment preview(s) to appear (detected \(observedNew))."
             )
         }
         throw ChatTransportError.actionDriverFailed(
             reason: "Timed out waiting for attachment upload to finish (\(lastStatus.spinnerCount) spinner(s) still active)."
         )
+    }
+
+    /// Attempts to stage a directory bundle via Gemini's `<code-folder-uploader>` (`webkitRelativePath`).
+    /// Returns `true` when the native folder uploader accepted the directory and cleared its upload spinners;
+    /// returns `false` when the account lacks `Import code` so callers can fall back to a consolidated bundle.
+    private func stageFolderAttachment(
+        _ folder: StagedAttachment,
+        in webView: WKWebView,
+        deadline: ContinuousClock.Instant
+    ) async throws -> Bool {
+        guard let entries = folder.folderEntries, !entries.isEmpty else {
+            return false
+        }
+
+        let initialStatus = try await readAttachmentStatus(in: webView)
+        let encodedEntries: [[String: Any]] = entries.map { entry in
+            [
+                "name": entry.filename,
+                "relativePath": entry.relativePath,
+                "type": entry.mimeType.isEmpty ? "text/plain" : entry.mimeType,
+                "base64": entry.data.base64EncodedString()
+            ]
+        }
+
+        let injectResult = try await invokeJS(
+            Self.stageCodeFolderScript,
+            arguments: [
+                "uploadTriggerSelectors": GeminiBridgeSelectors.ComposerDOM.uploadMenuTrigger.all,
+                "codeImportSelectors": GeminiBridgeSelectors.ComposerDOM.codeImportTrigger.all,
+                "folderItemSelectors": GeminiBridgeSelectors.ComposerDOM.codeFolderUploadItem.all,
+                "dirInputSelectors": GeminiBridgeSelectors.ComposerDOM.directoryFileInput.all,
+                "files": encodedEntries
+            ],
+            in: webView,
+            action: "stageFolderAttachment.inject"
+        )
+
+        guard boolValue(injectResult["ok"]) else {
+            let reason = (injectResult["reason"] as? String) ?? "unavailable"
+            Self.logger.notice("stageFolderAttachment: code-folder-uploader unavailable (\(reason, privacy: .public)); using consolidated codebase fallback")
+            return false
+        }
+
+        let previewDetectDeadline = min(deadline, ContinuousClock.now + .milliseconds(1200))
+        var sawFolderPreview = false
+        while ContinuousClock.now < previewDetectDeadline {
+            try Task.checkCancellation()
+            let status = try await readAttachmentStatus(in: webView)
+            if status.previewCount > initialStatus.previewCount {
+                sawFolderPreview = true
+                if status.spinnerCount == 0 {
+                    return true
+                }
+                break
+            }
+            try await sleepStep(until: previewDetectDeadline)
+        }
+
+        guard sawFolderPreview else {
+            return false
+        }
+
+        while ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            let status = try await readAttachmentStatus(in: webView)
+            if status.previewCount > initialStatus.previewCount && status.spinnerCount == 0 {
+                Self.logger.notice("stageFolderAttachment: folder '\(folder.filename, privacy: .public)' uploaded natively (\(entries.count, privacy: .public) files)")
+                return true
+            }
+            try await sleepStep(until: deadline)
+        }
+
+        throw ChatTransportError.actionDriverFailed(
+            reason: "Timed out waiting for folder '\(folder.filename)' upload to finish."
+        )
+    }
+
+    // MARK: - Composer Tool Mode & Deep Research Actions
+
+    /// Synchronizes Gemini's `toolbox-drawer` tool mode (`Canvas` or `Deep Research`), or clears any
+    /// active tool chip when `tool == nil`. Best-effort if the signed-in account hides `toolbox-drawer`.
+    func setComposerTool(_ tool: ComposerToolMode?, in webView: WKWebView) async throws {
+        let targetKeywords: [String]
+        let targetIcons: [String]
+        switch tool {
+        case .none:
+            targetKeywords = []
+            targetIcons = []
+        case .canvas:
+            targetKeywords = ["canvas", "画布"]
+            targetIcons = ["select_window_2", "edit_note", "note_stack", "draft"]
+        case .deepResearch:
+            targetKeywords = ["deep research", "深度研究"]
+            targetIcons = ["travel_explore", "manage_search", "Troubleshoot", "globe_book"]
+        }
+
+        _ = try await invokeJS(
+            Self.syncComposerToolScript,
+            arguments: [
+                "deselectSelectors": GeminiBridgeSelectors.ComposerDOM.toolboxDeselectButton.all,
+                "drawerTriggerSelectors": GeminiBridgeSelectors.ComposerDOM.toolboxDrawerTrigger.all,
+                "drawerItemSelectors": GeminiBridgeSelectors.ComposerDOM.toolboxDrawerItem.all,
+                "targetKeywords": targetKeywords,
+                "targetIcons": targetIcons
+            ],
+            in: webView,
+            action: "setComposerTool"
+        )
+    }
+
+    /// Clicks the `Start Research` (`[data-test-id="confirm-button"]`) button on the latest
+    /// `deep-research-confirmation-widget` in the conversation timeline.
+    func confirmDeepResearchPlan(in webView: WKWebView) async throws {
+        let deadline = ContinuousClock.now + timeout
+        var lastReason = "missing"
+        while ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            let result = try await invokeJS(
+                Self.clickEnabledControlScript,
+                arguments: [
+                    "selectors": GeminiBridgeSelectors.ConversationDOM.deepResearchConfirmButton.all
+                ],
+                in: webView,
+                action: "confirmDeepResearchPlan"
+            )
+            if boolValue(result["clicked"]) {
+                Self.logger.notice("confirmDeepResearchPlan: clicked Start Research")
+                return
+            }
+            if let reason = result["reason"] as? String {
+                lastReason = reason
+            }
+            try await sleepStep(until: deadline)
+        }
+
+        throw ChatTransportError.actionDriverFailed(
+            reason: "Deep Research confirmation button was unavailable (\(lastReason))."
+        )
+    }
+
+    /// Probes the hidden page DOM for Deep Research confirmation plans, live processing status,
+    /// or active Canvas immersive text to supplement wire-parsed `ArtifactCardInfo` items.
+    func probeLatestTurnDOMArtifacts(in webView: WKWebView) async -> (
+        planArtifact: ArtifactCardInfo?,
+        progress: DeepResearchProgress?,
+        canvasText: String?,
+        canvasTitle: String?
+    ) {
+        guard let result = try? await invokeJS(
+            Self.probeRichWidgetsScript,
+            arguments: [
+                "widgetSelectors": GeminiBridgeSelectors.ConversationDOM.deepResearchConfirmationWidget.all,
+                "statusSelectors": GeminiBridgeSelectors.ConversationDOM.deepResearchProcessingStatus.all
+            ],
+            in: webView,
+            action: "probeLatestTurnDOMArtifacts"
+        ) else {
+            return (nil, nil, nil, nil)
+        }
+
+        var planCard: ArtifactCardInfo?
+        if let rawSteps = result["planSteps"] as? [[String: Any]], !rawSteps.isEmpty {
+            let steps: [DeepResearchPlanStep] = rawSteps.enumerated().compactMap { idx, dict in
+                guard let title = (dict["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !title.isEmpty else {
+                    return nil
+                }
+                let detail = (dict["detail"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return DeepResearchPlanStep(
+                    id: "dom-step-\(idx)",
+                    title: title,
+                    detail: (detail?.isEmpty == false) ? detail : nil
+                )
+            }
+            if !steps.isEmpty {
+                let planTitle = ((result["planTitle"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+                    ?? String(localized: "Research Plan")
+                let estimate = ((result["timeEstimate"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+                let isConfirmed = boolValue(result["isPlanConfirmed"])
+                planCard = ArtifactCardInfo(
+                    id: "deep-research-plan-dom",
+                    kind: .deepResearch,
+                    title: planTitle,
+                    subtitle: estimate,
+                    plan: DeepResearchPlan(steps: steps, estimatedTimeText: estimate, isConfirmed: isConfirmed)
+                )
+            }
+        }
+
+        var progress: DeepResearchProgress?
+        if let statusText = (result["processingStatus"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !statusText.isEmpty {
+            progress = DeepResearchProgress(
+                statusText: statusText,
+                isRunning: boolValue(result["isProcessingRunning"]),
+                browsedSourceCount: intValue(result["sourceCount"])
+            )
+        }
+
+        let canvasText = ((result["canvasText"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+        let canvasTitle = ((result["canvasTitle"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+
+        return (planCard, progress, canvasText, canvasTitle)
     }
 
     private struct AttachmentStatus {
@@ -924,6 +1682,14 @@ final class GeminiActionDriver {
                 type: spec.type,
                 lastModified: Date.now()
             });
+            if (spec.relativePath) {
+                try {
+                    Object.defineProperty(file, 'webkitRelativePath', {
+                        value: spec.relativePath,
+                        configurable: true
+                    });
+                } catch (_) {}
+            }
             dt.items.add(file);
         }
         return dt;
@@ -1262,6 +2028,429 @@ final class GeminiActionDriver {
     await nextFrameAndMicrotask();
     return { clicked: true, selectorIndex: foundBtn.selectorIndex };
     """
+
+    private nonisolated static let stageCodeFolderScript = jsCommonHelpers + """
+    let capturedInput = null;
+    const origClick = HTMLInputElement.prototype.click;
+    HTMLInputElement.prototype.click = function() {
+        if (this && (this.webkitdirectory || (this.hasAttribute && this.hasAttribute('webkitdirectory')))) {
+            capturedInput = this;
+            return;
+        }
+        return origClick.apply(this, arguments);
+    };
+
+    try {
+        let dirInput = queryFirstMatching(dirInputSelectors, false);
+        if (!dirInput) {
+            const uploadTrigger = queryFirstMatching(uploadTriggerSelectors, false);
+            if (uploadTrigger && !isElementDisabled(uploadTrigger.element)) {
+                resolveClickTarget(uploadTrigger.element).click();
+                await nextFrameAndMicrotask();
+            }
+
+            const codeImport = queryFirstMatching(codeImportSelectors, false);
+            if (codeImport && !isElementDisabled(codeImport.element)) {
+                resolveClickTarget(codeImport.element).click();
+                await nextFrameAndMicrotask();
+            }
+
+            const folderItem = queryFirstMatching(folderItemSelectors, false);
+            if (folderItem && !isElementDisabled(folderItem.element)) {
+                resolveClickTarget(folderItem.element).click();
+                await nextFrameAndMicrotask();
+            }
+
+            dirInput = capturedInput ? { element: capturedInput, selectorIndex: 0 } : queryFirstMatching(dirInputSelectors, false);
+        }
+
+        if (!dirInput || !dirInput.element) {
+            return { ok: false, reason: 'missing-directory-input' };
+        }
+
+        const dt = buildDataTransfer(files);
+        dirInput.element.files = dt.files;
+        dirInput.element.dispatchEvent(new Event('change', { bubbles: true }));
+        await nextFrameAndMicrotask();
+        return { ok: true };
+    } finally {
+        HTMLInputElement.prototype.click = origClick;
+    }
+    """
+
+    private nonisolated static let syncComposerToolScript = jsCommonHelpers + """
+    const existingDeselect = queryFirstMatching(deselectSelectors, false);
+    if (targetKeywords.length === 0 && targetIcons.length === 0) {
+        if (existingDeselect && !isElementDisabled(existingDeselect.element)) {
+            resolveClickTarget(existingDeselect.element).click();
+            await nextFrameAndMicrotask();
+        }
+        return { ok: true, cleared: true };
+    }
+
+    const matchesTarget = (el) => {
+        if (!el) return false;
+        const text = String(el.textContent || el.getAttribute('aria-label') || '').toLowerCase();
+        for (let i = 0; i < targetKeywords.length; i += 1) {
+            if (text.includes(String(targetKeywords[i]).toLowerCase())) return true;
+        }
+        const icons = el.querySelectorAll ? el.querySelectorAll('mat-icon, gem-icon') : [];
+        for (let i = 0; i < icons.length; i += 1) {
+            const fontIcon = String(
+                icons[i].getAttribute('fonticon')
+                || icons[i].getAttribute('data-mat-icon-name')
+                || icons[i].textContent
+                || ''
+            ).trim().toLowerCase();
+            for (let k = 0; k < targetIcons.length; k += 1) {
+                if (fontIcon === String(targetIcons[k]).toLowerCase()) return true;
+            }
+        }
+        return false;
+    };
+
+    if (existingDeselect && matchesTarget(existingDeselect.element.closest('toolbox-drawer-item') || existingDeselect.element)) {
+        return { ok: true, alreadySelected: true };
+    }
+    if (existingDeselect && !isElementDisabled(existingDeselect.element)) {
+        resolveClickTarget(existingDeselect.element).click();
+        await nextFrameAndMicrotask();
+    }
+
+    let items = queryAllFirstGroup(drawerItemSelectors).elements;
+    let matchedItem = items.find(matchesTarget);
+
+    if (!matchedItem) {
+        const trigger = queryFirstMatching(drawerTriggerSelectors, false);
+        if (trigger && !isElementDisabled(trigger.element)) {
+            resolveClickTarget(trigger.element).click();
+            await nextFrameAndMicrotask();
+            items = queryAllFirstGroup(drawerItemSelectors).elements;
+            matchedItem = items.find(matchesTarget);
+        }
+    }
+
+    if (!matchedItem) {
+        return { ok: false, reason: 'tool-not-found' };
+    }
+
+    const clickTarget = resolveClickTarget(matchedItem);
+    if (!isElementDisabled(clickTarget)) {
+        clickTarget.click();
+        await nextFrameAndMicrotask();
+    }
+    return { ok: true, selected: true };
+    """
+
+    private nonisolated static let probeRichWidgetsScript = jsCommonHelpers + """
+    const out = {};
+
+    const widgets = queryAllFirstGroup(widgetSelectors).elements;
+    if (widgets.length > 0) {
+        const latestWidget = widgets[widgets.length - 1];
+        const heading = latestWidget.querySelector('[role="heading"], .title');
+        if (heading) out.planTitle = String(heading.textContent || '').trim();
+
+        const stepEls = latestWidget.querySelectorAll('[data-test-id="plan-step"], .research-step');
+        const steps = [];
+        for (let i = 0; i < stepEls.length; i += 1) {
+            const titleEl = stepEls[i].querySelector('.plan-step-title, .research-step-title') || stepEls[i];
+            const detailEl = stepEls[i].querySelector('.research-step-description');
+            const title = String(titleEl ? titleEl.textContent : '').trim();
+            const detail = detailEl ? String(detailEl.textContent || '').trim() : '';
+            if (title) steps.push({ title: title, detail: detail });
+        }
+        if (steps.length > 0) out.planSteps = steps;
+
+        const estEl = latestWidget.querySelector('[data-test-id="time-estimation-message"], .time-estimation-message');
+        if (estEl) out.timeEstimate = String(estEl.textContent || '').trim();
+
+        const confirmBtn = latestWidget.querySelector('[data-test-id="confirm-button"], button.confirm-button');
+        out.isPlanConfirmed = !confirmBtn || isElementDisabled(confirmBtn);
+    }
+
+    const statusEls = queryAllFirstGroup(statusSelectors).elements;
+    if (statusEls.length > 0) {
+        const latestStatus = statusEls[statusEls.length - 1];
+        const text = String(latestStatus.textContent || '').replace(/\\s+/g, ' ').trim();
+        if (text) {
+            out.processingStatus = text;
+            out.isProcessingRunning = true;
+            const numMatch = text.match(/(\\d+)/);
+            if (numMatch) out.sourceCount = parseInt(numMatch[1], 10);
+        }
+    }
+
+    const immersive = document.querySelector('immersive-panel, deep-research-immersive-panel');
+    if (immersive) {
+        const titleEl = immersive.querySelector('.immersive-title, header h1, header h2, [data-test-id="immersive-title"]');
+        if (titleEl) out.canvasTitle = String(titleEl.textContent || '').trim();
+        const codeEl = immersive.querySelector('xap-code-editor, pre code, .cm-content, .monaco-editor');
+        const docEl = immersive.querySelector('immersive-editor, .markdown-main-panel, .deep-research-content');
+        if (codeEl && codeEl.textContent) {
+            out.canvasText = String(codeEl.textContent);
+        } else if (docEl && docEl.innerText) {
+            out.canvasText = String(docEl.innerText);
+        }
+    }
+
+    return out;
+    """
+
+    private nonisolated static let clickOverlayVariantOptionScript = jsCommonHelpers + #"""
+    const matchesVariant = (el) => {
+        if (!el) return false;
+        const attrs = [
+            el.getAttribute ? el.getAttribute('data-option-id') : '',
+            el.getAttribute ? el.getAttribute('data-value') : '',
+            el.getAttribute ? el.getAttribute('data-test-id') : '',
+            el.getAttribute ? el.getAttribute('value') : '',
+            el.getAttribute ? el.getAttribute('jslog') : ''
+        ].map((v) => String(v || '').toLowerCase());
+
+        if (optionCode && optionCode.length > 0) {
+            const codeLower = String(optionCode).toLowerCase();
+            for (let i = 0; i < attrs.length; i += 1) {
+                if (attrs[i] === codeLower || attrs[i].includes(codeLower)) {
+                    return true;
+                }
+            }
+        }
+
+        const testId = attrs[2];
+        for (let i = 0; i < testIdHints.length; i += 1) {
+            if (testId && testId.includes(String(testIdHints[i]).toLowerCase())) {
+                return true;
+            }
+        }
+
+        const labelText = String(
+            (el.getAttribute && el.getAttribute('aria-label'))
+            || el.textContent
+            || ''
+        ).replace(/\s+/g, ' ').trim().toLowerCase();
+        if (labelText) {
+            for (let i = 0; i < keywords.length; i += 1) {
+                if (labelText.includes(String(keywords[i]).toLowerCase())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    if (Array.isArray(explicitSelectors) && explicitSelectors.length > 0) {
+        const direct = queryFirstMatching(explicitSelectors, false);
+        if (direct && direct.element) {
+            const target = resolveClickTarget(direct.element);
+            if (!isElementDisabled(direct.element) && !isElementDisabled(target)) {
+                target.click();
+                await nextFrameAndMicrotask();
+                return { clicked: true, via: 'explicit' };
+            }
+        }
+    }
+
+    const items = queryAllFirstGroup(itemSelectors).elements;
+    let sawDisabled = false;
+    for (let i = 0; i < items.length; i += 1) {
+        const candidate = items[i];
+        if (!matchesVariant(candidate)) continue;
+        const target = resolveClickTarget(candidate);
+        if (isElementDisabled(candidate) || isElementDisabled(target)) {
+            sawDisabled = true;
+            continue;
+        }
+        target.click();
+        await nextFrameAndMicrotask();
+        return { clicked: true, via: 'overlay' };
+    }
+
+    return { clicked: false, reason: sawDisabled ? 'disabled' : 'missing' };
+    """#
+
+    private nonisolated static let dismissOverlayScript = jsCommonHelpers + #"""
+    const esc = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        keyCode: 27,
+        bubbles: true,
+        cancelable: true
+    });
+    document.dispatchEvent(esc);
+    if (document.activeElement && document.activeElement !== document) {
+        document.activeElement.dispatchEvent(esc);
+    }
+    await nextFrameAndMicrotask();
+    return { ok: true };
+    """#
+
+    private nonisolated static let clickTurnBranchButtonScript = jsCommonHelpers + #"""
+    const containers = queryAllFirstGroup(containerSelectors).elements;
+    if (containers.length === 0) {
+        return { clicked: false, reason: 'missing-container' };
+    }
+
+    const matchesId = (el, id) => {
+        if (!el || !id) return false;
+        const attrs = ['id', 'data-response-id', 'data-request-id', 'data-turn-id'];
+        for (let i = 0; i < attrs.length; i += 1) {
+            const val = el.getAttribute ? el.getAttribute(attrs[i]) : null;
+            if (val && val.includes(id)) return true;
+        }
+        try {
+            if (el.querySelector(`[id*="${CSS.escape(id)}"], [data-response-id*="${CSS.escape(id)}"], [data-request-id*="${CSS.escape(id)}"]`)) {
+                return true;
+            }
+        } catch (_) {}
+        return false;
+    };
+
+    let targetContainer = containers[containers.length - 1];
+    if (responseId || requestId) {
+        for (let i = containers.length - 1; i >= 0; i -= 1) {
+            if ((responseId && matchesId(containers[i], responseId)) || (requestId && matchesId(containers[i], requestId))) {
+                targetContainer = containers[i];
+                break;
+            }
+        }
+    }
+
+    const directBranch = findInsideScope(targetContainer, branchSelectors, scopePrefix, false);
+    if (directBranch && directBranch.element) {
+        const target = resolveClickTarget(directBranch.element);
+        if (!isElementDisabled(directBranch.element) && !isElementDisabled(target)) {
+            target.click();
+            await nextFrameAndMicrotask();
+            return { clicked: true, via: 'direct' };
+        }
+    }
+
+    const moreBtn = findInsideScope(targetContainer, moreSelectors, scopePrefix, false);
+    if (moreBtn && moreBtn.element) {
+        const moreTarget = resolveClickTarget(moreBtn.element);
+        if (!isElementDisabled(moreBtn.element) && !isElementDisabled(moreTarget)) {
+            moreTarget.click();
+            await nextFrameAndMicrotask();
+
+            const overlayBranch = queryFirstMatching(branchSelectors, false);
+            if (overlayBranch && overlayBranch.element) {
+                const target = resolveClickTarget(overlayBranch.element);
+                if (!isElementDisabled(overlayBranch.element) && !isElementDisabled(target)) {
+                    target.click();
+                    await nextFrameAndMicrotask();
+                    return { clicked: true, via: 'overflow-selector' };
+                }
+            }
+
+            const menuItems = queryAllFirstGroup(overlayItemSelectors).elements;
+            for (let i = 0; i < menuItems.length; i += 1) {
+                const text = String(menuItems[i].textContent || menuItems[i].getAttribute('aria-label') || '').toLowerCase();
+                if (text.includes('branch') || text.includes('分支')) {
+                    const target = resolveClickTarget(menuItems[i]);
+                    if (!isElementDisabled(menuItems[i]) && !isElementDisabled(target)) {
+                        target.click();
+                        await nextFrameAndMicrotask();
+                        return { clicked: true, via: 'overflow-label' };
+                    }
+                }
+            }
+
+            const esc = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true });
+            document.dispatchEvent(esc);
+            await nextFrameAndMicrotask();
+        }
+    }
+
+    return { clicked: false, reason: 'missing' };
+    """#
+
+    private nonisolated static let domCreateShareLinkScript = jsCommonHelpers + #"""
+    const extractShareUrlFromDom = () => {
+        const shareRe = /https:\/\/gemini\.google\.com\/share\/[A-Za-z0-9_-]+/;
+        const inputs = document.querySelectorAll('.cdk-overlay-container input, mat-dialog-container input');
+        for (let i = 0; i < inputs.length; i += 1) {
+            const val = String(inputs[i].value || '');
+            const m = val.match(shareRe);
+            if (m) return m[0];
+        }
+        const links = document.querySelectorAll('.cdk-overlay-container a[href], mat-dialog-container a[href]');
+        for (let i = 0; i < links.length; i += 1) {
+            const href = String(links[i].getAttribute('href') || '');
+            const m = href.match(shareRe);
+            if (m) return m[0];
+        }
+        const dialogs = document.querySelectorAll('mat-dialog-container, .cdk-overlay-pane');
+        for (let i = 0; i < dialogs.length; i += 1) {
+            const txt = String(dialogs[i].textContent || '');
+            const m = txt.match(shareRe);
+            if (m) return m[0];
+        }
+        return '';
+    };
+
+    const dismissDialog = async () => {
+        const esc = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true });
+        document.dispatchEvent(esc);
+        if (document.activeElement && document.activeElement !== document) {
+            document.activeElement.dispatchEvent(esc);
+        }
+        await nextFrameAndMicrotask();
+    };
+
+    const shareTrigger = queryFirstMatching(shareSelectors, false);
+    if (!shareTrigger || !shareTrigger.element) {
+        return { ok: false, reason: 'missing-share-button' };
+    }
+    const triggerTarget = resolveClickTarget(shareTrigger.element);
+    if (isElementDisabled(shareTrigger.element) || isElementDisabled(triggerTarget)) {
+        return { ok: false, reason: 'disabled-share-button' };
+    }
+
+    try {
+        triggerTarget.click();
+        await nextFrameAndMicrotask();
+
+        // If share opened a menu first, click the Share item.
+        const menuItems = queryAllFirstGroup(overlayItemSelectors).elements;
+        for (let i = 0; i < menuItems.length; i += 1) {
+            const text = String(menuItems[i].textContent || menuItems[i].getAttribute('aria-label') || '').toLowerCase();
+            if (text.includes('share') || text.includes('分享')) {
+                const itemTarget = resolveClickTarget(menuItems[i]);
+                if (!isElementDisabled(itemTarget)) {
+                    itemTarget.click();
+                    await nextFrameAndMicrotask();
+                    break;
+                }
+            }
+        }
+
+        // Click "Create public link" if presented inside a share confirmation dialog.
+        const dialogButtons = document.querySelectorAll('mat-dialog-container button, .cdk-overlay-pane button');
+        for (let i = 0; i < dialogButtons.length; i += 1) {
+            const text = String(dialogButtons[i].textContent || dialogButtons[i].getAttribute('aria-label') || '').toLowerCase();
+            if ((text.includes('create') && text.includes('link')) || text.includes('创建公开链接')) {
+                if (!isElementDisabled(dialogButtons[i])) {
+                    dialogButtons[i].click();
+                    await nextFrameAndMicrotask();
+                    break;
+                }
+            }
+        }
+
+        const pollEnd = Date.now() + 3500;
+        while (Date.now() < pollEnd) {
+            const url = extractShareUrlFromDom();
+            if (url) {
+                return { ok: true, url: url };
+            }
+            await new Promise((r) => setTimeout(r, 120));
+        }
+        return { ok: false, reason: 'share-url-not-found' };
+    } finally {
+        await dismissDialog();
+    }
+    """#
 }
 
 // MARK: - GeminiWriteDriving Conformance Adapter
@@ -1335,5 +2524,111 @@ final class DefaultGeminiWriteDriver: GeminiWriteDriving {
                 timeout: actionDriver.timeout
             )
         }
+    }
+
+    func setComposerTool(in webView: WKWebView, tool: ComposerToolMode?) async throws {
+        try await actionDriver.setComposerTool(tool, in: webView)
+    }
+
+    func confirmDeepResearchPlan(in webView: WKWebView) async throws {
+        try await actionDriver.confirmDeepResearchPlan(in: webView)
+    }
+
+    func probeLatestTurnDOMArtifacts(in webView: WKWebView) async -> (
+        planArtifact: ArtifactCardInfo?,
+        progress: DeepResearchProgress?,
+        canvasText: String?,
+        canvasTitle: String?
+    ) {
+        await actionDriver.probeLatestTurnDOMArtifacts(in: webView)
+    }
+
+    func submitPrompt(
+        in webView: WKWebView,
+        text: String,
+        quotes: [QuotedPassage],
+        attachments: [StagedAttachment],
+        modelId: String?,
+        isTemporaryChat: Bool
+    ) async throws {
+        if let temporaryChatController,
+           let currentTemp = await temporaryChatController.readState(),
+           currentTemp != isTemporaryChat {
+            try await temporaryChatController.setTemporaryChat(
+                isTemporaryChat,
+                reason: "submitPrompt",
+                timeout: actionDriver.timeout
+            )
+        }
+        if let modelId, !modelId.isEmpty {
+            try? await actionDriver.selectModel(id: modelId, in: webView)
+        }
+        try await actionDriver.submitPrompt(text: text, quotes: quotes, attachments: attachments, in: webView)
+    }
+
+    func regenerateLastTurn(
+        in webView: WKWebView,
+        variant: RegenerateVariant,
+        modelId: String?
+    ) async throws {
+        try await actionDriver.regenerateLatestResponse(variant: variant, modelId: modelId, in: webView)
+    }
+
+    func branchConversation(
+        in webView: WKWebView,
+        conversationId: String,
+        requestId: String?,
+        responseId: String?
+    ) async -> String? {
+        await actionDriver.branchConversation(
+            conversationId: conversationId,
+            requestId: requestId,
+            responseId: responseId,
+            in: webView
+        )
+    }
+
+    func createPublicShareLink(
+        in webView: WKWebView,
+        conversationId: String,
+        scope: ShareLinkScope,
+        selectedDraftId: String?
+    ) async throws -> ShareLinkResult {
+        try await actionDriver.createPublicShareLink(
+            conversationId: conversationId,
+            scope: scope,
+            selectedDraftId: selectedDraftId,
+            in: webView
+        )
+    }
+
+    func exportToCloudService(
+        in webView: WKWebView,
+        service: CloudExportService,
+        title: String,
+        markdownText: String
+    ) async throws -> URL {
+        try await actionDriver.exportToCloudService(
+            service: service,
+            title: title,
+            markdownText: markdownText,
+            in: webView
+        )
+    }
+
+    func searchRemoteConversations(
+        in webView: WKWebView,
+        query: String,
+        limit: Int
+    ) async -> [ConversationSearchHit] {
+        await actionDriver.searchRemoteConversations(query: query, limit: limit, in: webView)
+    }
+
+    func synthesizeSpeechChunk(
+        in webView: WKWebView,
+        text: String,
+        locale: String
+    ) async -> Data? {
+        await actionDriver.synthesizeSpeechChunk(text: text, locale: locale, in: webView)
     }
 }

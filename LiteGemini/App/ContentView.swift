@@ -63,6 +63,10 @@ struct ContentView: View {
                     .opacity(0.001)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
+
+                CoordinatorAuxBridgeHost(coordinator: coordinator) {
+                    localComposerFocusTrigger &+= 1
+                }
             }
 
             if settings.isNativeUIActive {
@@ -77,6 +81,9 @@ struct ContentView: View {
                     onVerifyChallenge: handleVerifyChallengeAction,
                     onSwitchToWebMode: {
                         handoffCoordinator.switchToWebMode()
+                    },
+                    onFocusMainComposer: {
+                        localComposerFocusTrigger &+= 1
                     }
                 ) {
                     ChatSurfaceView(
@@ -88,6 +95,13 @@ struct ContentView: View {
                         },
                         onSaveInlineImage: { attachment in
                             coordinator?.saveInlineImage(attachment)
+                        },
+                        onQuoteSelection: { selectedText in
+                            workspaceStore.stageQuotedText(selectedText)
+                            localComposerFocusTrigger &+= 1
+                        },
+                        onAskBtwSelection: { selectedText in
+                            workspaceStore.openBtwPanel(withQuotedText: selectedText)
                         },
                         topBar: {
                             EmptyView()
@@ -104,6 +118,11 @@ struct ContentView: View {
                                 focusTrigger: localComposerFocusTrigger,
                                 onOpenFolderInWebMode: {
                                     handoffCoordinator.switchToWebMode()
+                                },
+                                onEscapeUnhandled: {
+                                    if workspaceStore.btwStore.isPresented {
+                                        workspaceStore.btwStore.close()
+                                    }
                                 }
                             )
                         }
@@ -294,6 +313,31 @@ struct ContentView: View {
                 isNativeUIActive: isNative,
                 classicBackgroundColor: classicColor
             )
+        }
+    }
+}
+
+// MARK: - CoordinatorAuxBridgeHost
+
+/// Observes `AppCoordinator` for lazy ephemeral `Btw` engine hosting and programmatic composer
+/// focus triggers without re-rendering `ContentView` or perturbing `MainRootView`'s view tree.
+private struct CoordinatorAuxBridgeHost: View {
+
+    @ObservedObject var coordinator: AppCoordinator
+    let onComposerFocusRequested: () -> Void
+
+    var body: some View {
+        ZStack {
+            if let btwEngine = coordinator.activeBtwEngine {
+                HiddenSessionWebViewHost(webView: btwEngine.webView)
+                    .frame(width: 320, height: 240)
+                    .opacity(0.001)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .onChange(of: coordinator.mainComposerFocusTrigger) { _, _ in
+            onComposerFocusRequested()
         }
     }
 }

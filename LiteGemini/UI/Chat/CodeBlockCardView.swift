@@ -11,9 +11,14 @@ struct CodeBlockCardView: View {
     let code: String
     var isClosed: Bool = true
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var didCopy = false
     @State private var isHoveringCopy = false
     @State private var copyResetTask: Task<Void, Never>?
+    @State private var highlightedText: AttributedString?
+    @State private var highlightedKey: CodeSyntaxCache.Key?
+
+    private static let codeFontSize: CGFloat = 12.5
 
     private var headerTitle: String {
         if let language = language?.trimmingCharacters(in: .whitespacesAndNewlines), !language.isEmpty {
@@ -31,9 +36,7 @@ struct CodeBlockCardView: View {
                 .frame(height: LiquidGlassMetrics.hairlineWidth)
 
             ScrollView(.horizontal, showsIndicators: true) {
-                Text(code.isEmpty ? " " : code)
-                    .font(.system(size: 12.5, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Color.primary.opacity(0.92))
+                codeTextView(for: currentCacheKey)
                     .lineSpacing(3.5)
                     .textSelection(.enabled)
                     .padding(.horizontal, 13)
@@ -49,9 +52,71 @@ struct CodeBlockCardView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(LiquidGlassColors.subtleHairline, lineWidth: LiquidGlassMetrics.hairlineWidth)
         )
+        .task(id: currentCacheKey) {
+            await refreshSyntaxHighlight(for: currentCacheKey)
+        }
         .onDisappear {
             copyResetTask?.cancel()
             copyResetTask = nil
+        }
+    }
+
+    private var currentCacheKey: CodeSyntaxCache.Key {
+        CodeSyntaxCache.Key(
+            code: code,
+            language: language,
+            isDark: colorScheme == .dark,
+            fontSize: Self.codeFontSize
+        )
+    }
+
+    @ViewBuilder
+    private func codeTextView(for key: CodeSyntaxCache.Key) -> some View {
+        if let cached = CodeSyntaxCache.shared.cached(for: key) {
+            Text(cached)
+        } else if highlightedKey == key, let highlightedText {
+            Text(highlightedText)
+        } else {
+            Text(code.isEmpty ? " " : code)
+                .font(.system(size: Self.codeFontSize, weight: .regular, design: .monospaced))
+                .foregroundStyle(Color.primary.opacity(0.92))
+        }
+    }
+
+    private func refreshSyntaxHighlight(for key: CodeSyntaxCache.Key) async {
+        guard !code.isEmpty else {
+            highlightedText = nil
+            highlightedKey = nil
+            return
+        }
+        if let cached = CodeSyntaxCache.shared.cached(for: key) {
+            highlightedText = cached
+            highlightedKey = key
+            return
+        }
+
+        if !isClosed {
+            do {
+                try await Task.sleep(for: .milliseconds(90))
+            } catch {
+                return
+            }
+        }
+        guard !Task.isCancelled else { return }
+
+        let source = code
+        let lang = language
+        let isDark = colorScheme == .dark
+        if let result = await CodeSyntaxHighlightEngine.shared.highlight(
+            code: source,
+            language: lang,
+            isDark: isDark,
+            fontSize: Self.codeFontSize
+        ) {
+            guard !Task.isCancelled else { return }
+            CodeSyntaxCache.shared.store(result, for: key)
+            highlightedText = result
+            highlightedKey = key
         }
     }
 

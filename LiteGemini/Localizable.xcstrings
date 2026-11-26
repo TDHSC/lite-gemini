@@ -1,6 +1,36 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@, %lld files" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@，%2$lld 个文件"
+          }
+        }
+      }
+    },
+    "%lld files" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个文件"
+          }
+        }
+      }
+    },
+    "%lld sources" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个来源"
+          }
+        }
+      }
+    },
     "10 minutes" : {
       "localizations" : {
         "zh-Hans" : {
@@ -141,6 +171,26 @@
         }
       }
     },
+    "Ask a quick side question without cluttering the main chat." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "随时发起旁路追问，不打断主对话上下文。"
+          }
+        }
+      }
+    },
+    "Ask a side question…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入旁路追问…"
+          }
+        }
+      }
+    },
     "Ask anything with 120Hz native Liquid Glass." : {
       "localizations" : {
         "zh-Hans" : {
@@ -157,6 +207,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "随便问点什么…"
+          }
+        }
+      }
+    },
+    "Ask in Btw" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Btw 中追问"
           }
         }
       }
@@ -191,6 +251,36 @@
         }
       }
     },
+    "Branch in new chat" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从此处创建分支对话"
+          }
+        }
+      }
+    },
+    "Branched into a new chat" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已从此处创建分支对话"
+          }
+        }
+      }
+    },
+    "Btw" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Btw"
+          }
+        }
+      }
+    },
     "Cancel" : {
       "localizations" : {
         "zh-Hans" : {
@@ -217,6 +307,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "修改后需要刷新页面 (Cmd+R) 才能生效"
+          }
+        }
+      }
+    },
+    "Chat" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对话"
           }
         }
       }
@@ -291,6 +391,26 @@
         }
       }
     },
+    "Clear Search" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除搜索"
+          }
+        }
+      }
+    },
+    "Clear side thread" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清空旁路对话"
+          }
+        }
+      }
+    },
     "Cleared" : {
       "localizations" : {
         "zh-Hans" : {
@@ -321,6 +441,36 @@
         }
       }
     },
+    "Close Btw" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭 Btw"
+          }
+        }
+      }
+    },
+    "Close Btw (Esc)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭 Btw (Esc)"
+          }
+        }
+      }
+    },
+    "Close Canvas" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭画布"
+          }
+        }
+      }
+    },
     "Close Quick Window" : {
       "localizations" : {
         "zh-Hans" : {
@@ -347,6 +497,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭窗口或按 ⌘Q 时，Lite Gemini 会隐藏并移除 Dock 图标，而不是退出。再次打开 Lite Gemini 或按显示/隐藏快捷键即可恢复。"
+          }
+        }
+      }
+    },
+    "Cloud" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "云端"
           }
         }
       }
@@ -391,12 +551,62 @@
         }
       }
     },
+    "Copy LaTeX" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制 LaTeX"
+          }
+        }
+      }
+    },
+    "Copy Public Share Link" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制公开分享链接"
+          }
+        }
+      }
+    },
+    "Copy Share Link" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制分享链接"
+          }
+        }
+      }
+    },
+    "Current Chat" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前对话"
+          }
+        }
+      }
+    },
     "Deep Research" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "深度研究"
+          }
+        }
+      }
+    },
+    "Deep Research Plan" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "深度研究计划"
           }
         }
       }
@@ -417,6 +627,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭"
+          }
+        }
+      }
+    },
+    "Dismiss Search" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭搜索"
+          }
+        }
+      }
+    },
+    "Document" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文档"
           }
         }
       }
@@ -451,12 +681,32 @@
         }
       }
     },
+    "Draft in Gmail" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Gmail 中创建草稿"
+          }
+        }
+      }
+    },
     "Edit" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "编辑"
+          }
+        }
+      }
+    },
+    "Edit Plan" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修改计划"
           }
         }
       }
@@ -481,6 +731,56 @@
         }
       }
     },
+    "Ephemeral • Uses main chat as background • Esc to close" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "临时会话 • 以主对话为背景 • 按 Esc 关闭"
+          }
+        }
+      }
+    },
+    "Export File…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出文件…"
+          }
+        }
+      }
+    },
+    "Export Markdown (.md)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出 Markdown (.md)"
+          }
+        }
+      }
+    },
+    "Export PDF (.pdf)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出 PDF (.pdf)"
+          }
+        }
+      }
+    },
+    "Export to Google Docs" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导出到 Google 文档"
+          }
+        }
+      }
+    },
     "Extension" : {
       "localizations" : {
         "zh-Hans" : {
@@ -501,6 +801,26 @@
         }
       }
     },
+    "Finish sending this conversation before branching." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先完成当前对话的发送再创建分支。"
+          }
+        }
+      }
+    },
+    "Finish sending this conversation before sharing." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先完成当前对话的发送再分享。"
+          }
+        }
+      }
+    },
     "Folder uploads require Classic Web Mode." : {
       "localizations" : {
         "zh-Hans" : {
@@ -517,6 +837,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Gem"
+          }
+        }
+      }
+    },
+    "Gemini did not respond in time." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini 响应超时。"
+          }
+        }
+      }
+    },
+    "Gemini returned an empty response." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini 返回了空响应。"
           }
         }
       }
@@ -601,6 +941,16 @@
         }
       }
     },
+    "LaTeX" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LaTeX"
+          }
+        }
+      }
+    },
     "Language" : {
       "localizations" : {
         "zh-Hans" : {
@@ -627,6 +977,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "登录时自动启动"
+          }
+        }
+      }
+    },
+    "Listen" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "朗读"
           }
         }
       }
@@ -661,12 +1021,42 @@
         }
       }
     },
+    "Longer" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更详细"
+          }
+        }
+      }
+    },
+    "Markdown" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markdown"
+          }
+        }
+      }
+    },
     "Math expression" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "数学公式"
+          }
+        }
+      }
+    },
+    "Math expression: %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数学公式：%@"
           }
         }
       }
@@ -691,12 +1081,42 @@
         }
       }
     },
+    "More casual" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更口语化"
+          }
+        }
+      }
+    },
+    "More professional" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更正式"
+          }
+        }
+      }
+    },
     "Native Liquid Glass" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "原生 Liquid Glass"
+          }
+        }
+      }
+    },
+    "Navigate" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "导航"
           }
         }
       }
@@ -751,6 +1171,16 @@
         }
       }
     },
+    "No matching conversations" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到匹配的对话"
+          }
+        }
+      }
+    },
     "None" : {
       "localizations" : {
         "zh-Hans" : {
@@ -767,6 +1197,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未登录"
+          }
+        }
+      }
+    },
+    "Notes from Btw" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自 Btw 的笔记"
           }
         }
       }
@@ -801,12 +1241,82 @@
         }
       }
     },
+    "Open" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开"
+          }
+        }
+      }
+    },
+    "Open Canvas" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开画布"
+          }
+        }
+      }
+    },
+    "Open in Browser" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在浏览器中打开"
+          }
+        }
+      }
+    },
+    "Open in Google Colab" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Google Colab 中打开"
+          }
+        }
+      }
+    },
+    "Open in Main" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在主窗口打开"
+          }
+        }
+      }
+    },
+    "Open in Main Window" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在主窗口中打开"
+          }
+        }
+      }
+    },
     "Open in Web ↗" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "在网页中打开 ↗"
+          }
+        }
+      }
+    },
+    "Pause" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂停"
           }
         }
       }
@@ -821,12 +1331,52 @@
         }
       }
     },
+    "Play" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放"
+          }
+        }
+      }
+    },
+    "Playback Speed" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放倍速"
+          }
+        }
+      }
+    },
+    "Playback Speed %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放倍速 %@"
+          }
+        }
+      }
+    },
     "Press a key combination…" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "按下组合键…"
+          }
+        }
+      }
+    },
+    "Preview" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览"
           }
         }
       }
@@ -867,6 +1417,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "退出 Lite Gemini"
+          }
+        }
+      }
+    },
+    "Quote" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "引用"
+          }
+        }
+      }
+    },
+    "Quote Selection" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "引用选中内容"
+          }
+        }
+      }
+    },
+    "Quote in Reply" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "引用追问"
+          }
+        }
+      }
+    },
+    "Read Aloud" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "朗读"
+          }
+        }
+      }
+    },
+    "Read Report" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阅读报告"
+          }
+        }
+      }
+    },
+    "Reader" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阅读"
           }
         }
       }
@@ -931,6 +1541,16 @@
         }
       }
     },
+    "Regenerate options" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新生成选项"
+          }
+        }
+      }
+    },
     "Reload" : {
       "localizations" : {
         "zh-Hans" : {
@@ -981,12 +1601,62 @@
         }
       }
     },
+    "Remove quote" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除引用"
+          }
+        }
+      }
+    },
+    "Research Plan" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "研究计划"
+          }
+        }
+      }
+    },
+    "Research Report" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "研究报告"
+          }
+        }
+      }
+    },
+    "Research Started" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已开始研究"
+          }
+        }
+      }
+    },
     "Reset to Default" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "恢复默认"
+          }
+        }
+      }
+    },
+    "Retry without tools" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不使用工具重试"
           }
         }
       }
@@ -1021,12 +1691,92 @@
         }
       }
     },
+    "Search Chats…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索对话…"
+          }
+        }
+      }
+    },
+    "Search chats" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索对话"
+          }
+        }
+      }
+    },
+    "Search chats…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索对话…"
+          }
+        }
+      }
+    },
+    "Search your conversations" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索你的对话"
+          }
+        }
+      }
+    },
+    "Searching cloud history" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在搜索云端历史记录"
+          }
+        }
+      }
+    },
+    "Searching cloud history…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在搜索云端历史记录…"
+          }
+        }
+      }
+    },
+    "Searching conversations…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在搜索对话…"
+          }
+        }
+      }
+    },
     "Select Model" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择模型"
+          }
+        }
+      }
+    },
+    "Send" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送"
           }
         }
       }
@@ -1041,6 +1791,56 @@
         }
       }
     },
+    "Send side question (↩)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送旁路追问 (↩)"
+          }
+        }
+      }
+    },
+    "Send to main chat" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送到主对话"
+          }
+        }
+      }
+    },
+    "Share & Export" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享与导出"
+          }
+        }
+      }
+    },
+    "Share Entire Chat" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享整个对话"
+          }
+        }
+      }
+    },
+    "Share This Response" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分享此回复"
+          }
+        }
+      }
+    },
     "Shortcuts" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1051,12 +1851,42 @@
         }
       }
     },
+    "Shorter" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更精简"
+          }
+        }
+      }
+    },
+    "Show %lld more quotes" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示其余 %lld 条引用"
+          }
+        }
+      }
+    },
     "Show in Finder" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "在访达中显示"
+          }
+        }
+      }
+    },
+    "Show less" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起"
           }
         }
       }
@@ -1121,12 +1951,82 @@
         }
       }
     },
+    "Simpler" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更通俗"
+          }
+        }
+      }
+    },
+    "Start Research" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始研究"
+          }
+        }
+      }
+    },
+    "Starting Deep Research…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在启动深度研究…"
+          }
+        }
+      }
+    },
     "Stop" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止"
+          }
+        }
+      }
+    },
+    "Summarize takeaways into main composer" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "总结要点并填入主输入框"
+          }
+        }
+      }
+    },
+    "Summarizing key takeaways for main chat…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在为主对话总结要点…"
+          }
+        }
+      }
+    },
+    "Summarizing…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在总结…"
+          }
+        }
+      }
+    },
+    "Switch model & retry" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换模型并重试"
           }
         }
       }
@@ -1231,6 +2131,46 @@
         }
       }
     },
+    "Try a different keyword or phrase." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请尝试其他关键词或短语。"
+          }
+        }
+      }
+    },
+    "Try again" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试"
+          }
+        }
+      }
+    },
+    "Type to search cached chats instantly and query your cloud history." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入关键词即可即时检索本地缓存，并搜索云端对话历史。"
+          }
+        }
+      }
+    },
+    "Unable to branch this conversation right now." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂时无法从此对话创建分支。"
+          }
+        }
+      }
+    },
     "Unable to connect to Gemini. Please check your network connection." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1251,6 +2191,16 @@
         }
       }
     },
+    "Unable to summarize this side thread." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法总结当前旁路对话。"
+          }
+        }
+      }
+    },
     "Untitled" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1267,6 +2217,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新消息"
+          }
+        }
+      }
+    },
+    "Upload Code Folder" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上传代码文件夹"
+          }
+        }
+      }
+    },
+    "Upload Code Folder…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上传代码文件夹…"
           }
         }
       }
@@ -1354,6 +2324,16 @@
         }
       }
     },
+    "You can attach up to %lld quotes per message." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每条消息最多可添加 %lld 条引用。"
+          }
+        }
+      }
+    },
     "Your recent Gemini conversations will appear here." : {
       "localizations" : {
         "zh-Hans" : {
@@ -1370,6 +2350,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "缩放"
+          }
+        }
+      }
+    },
+    "This action is not supported by the active transport." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前连接通道暂不支持此操作。"
+          }
+        }
+      }
+    },
+    "Gemini has not finished saving this conversation yet. Please try again in a moment." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemini 尚未完成对话保存，请稍后再试。"
+          }
+        }
+      }
+    },
+    "Sign in to Gemini to perform this action." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先登录 Gemini 后再执行此操作。"
           }
         }
       }

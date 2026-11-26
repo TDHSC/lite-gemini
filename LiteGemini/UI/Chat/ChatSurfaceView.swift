@@ -15,8 +15,12 @@ struct ChatSurfaceView<TopBar: View, EmptyState: View, Composer: View>: View {
     @ObservedObject var store: ChatSessionStore
     var isExpanded: Bool
     var topContentInset: CGFloat
+    var isQuickMode: Bool
+    var onOpenArtifact: ((ArtifactCardInfo) -> Void)?
     var onOpenInWebMode: ((String?) -> Void)?
     var onSaveInlineImage: ((ImageAttachment) -> Void)?
+    var onQuoteSelection: ((String) -> Void)?
+    var onAskBtwSelection: ((String) -> Void)?
     @ViewBuilder var topBar: () -> TopBar
     @ViewBuilder var emptyState: () -> EmptyState
     @ViewBuilder var composer: () -> Composer
@@ -29,8 +33,12 @@ struct ChatSurfaceView<TopBar: View, EmptyState: View, Composer: View>: View {
         store: ChatSessionStore,
         isExpanded: Bool = true,
         topContentInset: CGFloat = LiquidGlassMetrics.topBarHeight,
+        isQuickMode: Bool = false,
+        onOpenArtifact: ((ArtifactCardInfo) -> Void)? = nil,
         onOpenInWebMode: ((String?) -> Void)? = nil,
         onSaveInlineImage: ((ImageAttachment) -> Void)? = nil,
+        onQuoteSelection: ((String) -> Void)? = nil,
+        onAskBtwSelection: ((String) -> Void)? = nil,
         @ViewBuilder topBar: @escaping () -> TopBar,
         @ViewBuilder emptyState: @escaping () -> EmptyState,
         @ViewBuilder composer: @escaping () -> Composer
@@ -38,8 +46,12 @@ struct ChatSurfaceView<TopBar: View, EmptyState: View, Composer: View>: View {
         self._store = ObservedObject(wrappedValue: store)
         self.isExpanded = isExpanded
         self.topContentInset = topContentInset
+        self.isQuickMode = isQuickMode
+        self.onOpenArtifact = onOpenArtifact
         self.onOpenInWebMode = onOpenInWebMode
         self.onSaveInlineImage = onSaveInlineImage
+        self.onQuoteSelection = onQuoteSelection
+        self.onAskBtwSelection = onAskBtwSelection
         self.topBar = topBar
         self.emptyState = emptyState
         self.composer = composer
@@ -81,8 +93,12 @@ struct ChatSurfaceView<TopBar: View, EmptyState: View, Composer: View>: View {
                     store: store,
                     topContentInset: topContentInset,
                     bottomContentInset: measuredComposerHeight,
+                    isQuickMode: isQuickMode,
+                    onOpenArtifact: onOpenArtifact,
                     onOpenInWebMode: onOpenInWebMode,
-                    onSaveInlineImage: onSaveInlineImage
+                    onSaveInlineImage: onSaveInlineImage,
+                    onQuoteSelection: onQuoteSelection,
+                    onAskBtwSelection: onAskBtwSelection
                 )
             }
 

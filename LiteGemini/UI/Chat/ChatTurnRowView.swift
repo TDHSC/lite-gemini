@@ -20,6 +20,26 @@ struct ChatTurnRowView: View {
     let canRegenerate: Bool
     var onEdit: (() -> Void)? = nil
     var onRegenerate: (() -> Void)? = nil
+    var onRegenerateVariant: ((RegenerateVariant, String?) -> Void)? = nil
+    var isQuickMode: Bool = false
+    var isTemporaryChat: Bool = false
+    var availableModels: [ModelOption] = []
+    var selectedModelId: String? = nil
+    var isBranchingThisTurn: Bool = false
+    var isShareExportBusy: Bool = false
+    var speechController: TurnSpeechController? = nil
+    var onSynthesizeSpeechChunk: (@MainActor (String, String) async -> Data?)? = nil
+    var onBranchFromTurn: (() -> Void)? = nil
+    var onShareThisTurn: (() -> Void)? = nil
+    var onShareEntireChat: (() -> Void)? = nil
+    var onExportTurnMarkdown: (() -> Void)? = nil
+    var onExportTurnPDF: (() -> Void)? = nil
+    var onExportGoogleDocs: (() -> Void)? = nil
+    var onDraftGmail: (() -> Void)? = nil
+    var onOpenGoogleColab: (() -> Void)? = nil
+    var onOpenArtifact: ((ArtifactCardInfo) -> Void)? = nil
+    var onConfirmResearchPlan: ((ArtifactCardInfo) -> Void)? = nil
+    var onEditResearchPlan: (() -> Void)? = nil
     var onOpenInWebMode: (() -> Void)? = nil
     var onSaveInlineImage: ((ImageAttachment) -> Void)? = nil
 
@@ -62,6 +82,14 @@ struct ChatTurnRowView: View {
         return !turn.assistantMarkdown.isEmpty
             || !turn.citations.isEmpty
             || (isLatestTurn && (canEdit || canRegenerate))
+            || (!isQuickMode && !isTemporaryChat && onBranchFromTurn != nil)
+    }
+
+    private var isSpeechActiveOnThisTurn: Bool {
+        guard let speechController else {
+            return false
+        }
+        return speechController.activeTurnId == TurnSpeechController.stableTurnUUID(for: turn.id)
     }
 
     var body: some View {
@@ -98,6 +126,10 @@ struct ChatTurnRowView: View {
             Spacer(minLength: max(24, containerWidth * 0.14))
 
             VStack(alignment: .trailing, spacing: 6) {
+                if let quotedPassages = turn.quotedPassages, !quotedPassages.isEmpty {
+                    userQuotedPassageChips(quotedPassages)
+                }
+
                 if !turn.userAttachments.isEmpty {
                     userAttachmentChips
                 }
@@ -122,15 +154,43 @@ struct ChatTurnRowView: View {
         }
     }
 
+    private func userQuotedPassageChips(_ quotes: [QuotedPassage]) -> some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            ForEach(quotes) { quote in
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "arrowshape.turn.up.left")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                        .accessibilityHidden(true)
+
+                    Text(quote.quotedText)
+                        .font(.system(size: 11.5, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .glassCard(
+                    cornerRadius: 12,
+                    variant: .clear,
+                    tint: LiquidGlassColors.clearCardTint
+                )
+            }
+        }
+    }
+
     private var userAttachmentChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LiquidGlassContainer(spacing: 6) {
                 HStack(spacing: 6) {
                     ForEach(turn.userAttachments) { attachment in
                         HStack(spacing: 5) {
-                            Image(systemName: attachment.isImage ? "photo" : "doc")
+                            Image(systemName: attachment.isFolder ? "folder.fill" : (attachment.isImage ? "photo" : "doc"))
                                 .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(attachment.isFolder ? LiquidGlassColors.sendButtonBlue : .secondary)
 
                             Text(attachment.filename)
                                 .font(.system(size: 11.5, weight: .medium))
@@ -139,7 +199,11 @@ struct ChatTurnRowView: View {
                                 .truncationMode(.middle)
                                 .frame(maxWidth: 160, alignment: .leading)
 
-                            if attachment.byteCount > 0 {
+                            if let fileCount = attachment.folderFileCount, fileCount > 0 {
+                                Text("\(fileCount) files")
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(.tertiary)
+                            } else if attachment.byteCount > 0 {
                                 Text(formattedByteCount(attachment.byteCount))
                                     .font(.system(size: 10.5))
                                     .foregroundStyle(.tertiary)
@@ -209,6 +273,10 @@ struct ChatTurnRowView: View {
                     case .artifact(let info):
                         ArtifactFallbackCardView(
                             artifact: info,
+                            isQuickMode: isQuickMode,
+                            onOpenArtifact: onOpenArtifact,
+                            onConfirmResearchPlan: onConfirmResearchPlan,
+                            onEditResearchPlan: onEditResearchPlan,
                             onOpenInWebMode: onOpenInWebMode
                         )
                     }
@@ -226,10 +294,14 @@ struct ChatTurnRowView: View {
     // MARK: - Unified Single-Row Turn Footer
 
     private var unifiedTurnFooter: some View {
-        HStack(spacing: 4) {
+        let markdown = turn.assistantMarkdown
+        let hasMarkdown = !markdown.isEmpty
+        let allowsExtendedActions = !isQuickMode && !isTemporaryChat && !isStreaming
+
+        return HStack(spacing: 4) {
             LiquidGlassContainer(spacing: 6) {
                 HStack(spacing: 4) {
-                    if !turn.assistantMarkdown.isEmpty {
+                    if hasMarkdown {
                         TurnFooterIconButton(
                             systemName: didCopyResponse ? "checkmark" : "doc.on.doc",
                             tint: didCopyResponse ? Color.green : nil,
@@ -238,13 +310,38 @@ struct ChatTurnRowView: View {
                         )
                         .liquidGlassID("turn-footer-copy", in: turnFooterGlassNamespace)
                         .liquidGlassTransitionMaterialize()
+
+                        if let speechController, let onSynthesizeSpeechChunk {
+                            TurnSpeechControlView(
+                                turnId: TurnSpeechController.stableTurnUUID(for: turn.id),
+                                markdown: markdown,
+                                controller: speechController,
+                                synthesizeChunk: onSynthesizeSpeechChunk
+                            )
+                            .liquidGlassID("turn-footer-speech", in: turnFooterGlassNamespace)
+                            .liquidGlassTransitionMaterialize()
+                        }
                     }
 
                     if isLatestTurn && canRegenerate {
-                        TurnFooterIconButton(
-                            systemName: "arrow.clockwise",
-                            helpText: String(localized: "Regenerate"),
-                            action: { onRegenerate?() }
+                        TurnRegenerateSplitButton(
+                            hasArtifacts: turn.hasArtifacts,
+                            availableModels: availableModels,
+                            selectedModelId: selectedModelId,
+                            onTryAgain: {
+                                if let onRegenerateVariant {
+                                    onRegenerateVariant(.tryAgain, nil)
+                                } else {
+                                    onRegenerate?()
+                                }
+                            },
+                            onSelectVariant: { variant, modelId in
+                                if let onRegenerateVariant {
+                                    onRegenerateVariant(variant, modelId)
+                                } else if variant == .tryAgain && modelId == nil {
+                                    onRegenerate?()
+                                }
+                            }
                         )
                         .liquidGlassID("turn-footer-regenerate", in: turnFooterGlassNamespace)
                         .liquidGlassTransitionMaterialize()
@@ -257,6 +354,37 @@ struct ChatTurnRowView: View {
                             action: { onEdit?() }
                         )
                         .liquidGlassID("turn-footer-edit", in: turnFooterGlassNamespace)
+                        .liquidGlassTransitionMaterialize()
+                    }
+
+                    if allowsExtendedActions, let onBranchFromTurn {
+                        TurnFooterIconButton(
+                            systemName: "arrow.triangle.branch",
+                            isBusy: isBranchingThisTurn,
+                            helpText: String(localized: "Branch in new chat"),
+                            action: onBranchFromTurn
+                        )
+                        .liquidGlassID("turn-footer-branch", in: turnFooterGlassNamespace)
+                        .liquidGlassTransitionMaterialize()
+                    }
+
+                    if allowsExtendedActions && hasMarkdown {
+                        ShareExportMenuButton(
+                            style: .turnFooterOrb,
+                            isBusy: isShareExportBusy,
+                            isShareLinkAvailable: onShareThisTurn != nil || onShareEntireChat != nil,
+                            hasPythonCode: ShareExportMenuButton.containsPythonCode(in: markdown),
+                            shareLinkLabel: String(localized: "Share This Response"),
+                            secondaryShareLinkLabel: String(localized: "Share Entire Chat"),
+                            onCreateShareLink: onShareThisTurn,
+                            onCreateSecondaryShareLink: onShareEntireChat,
+                            onExportMarkdown: onExportTurnMarkdown,
+                            onExportPDF: onExportTurnPDF,
+                            onExportGoogleDocs: onExportGoogleDocs,
+                            onDraftGmail: onDraftGmail,
+                            onOpenGoogleColab: onOpenGoogleColab
+                        )
+                        .liquidGlassID("turn-footer-share", in: turnFooterGlassNamespace)
                         .liquidGlassTransitionMaterialize()
                     }
                 }
@@ -275,7 +403,7 @@ struct ChatTurnRowView: View {
 
             Spacer(minLength: 0)
         }
-        .opacity(isHoveringRow || didCopyResponse || !turn.citations.isEmpty ? 1.0 : 0.72)
+        .opacity(isHoveringRow || didCopyResponse || isSpeechActiveOnThisTurn || isBranchingThisTurn || !turn.citations.isEmpty ? 1.0 : 0.72)
     }
 
     // MARK: - Actions & Helpers
@@ -375,6 +503,7 @@ private struct TurnFooterIconButton: View {
 
     let systemName: String
     var tint: Color? = nil
+    var isBusy: Bool = false
     let helpText: String
     let action: () -> Void
 
@@ -382,19 +511,28 @@ private struct TurnFooterIconButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 11.5, weight: .medium))
-                .contentTransition(.symbolEffect(.replace))
-                .foregroundStyle(tint ?? Color.primary.opacity(isHovering ? 0.94 : 0.68))
-                .glassOrb(
-                    size: 28,
-                    variant: .clear,
-                    tint: isHovering ? LiquidGlassColors.hoverHighlight : nil,
-                    interactive: true
-                )
-                .contentShape(Circle())
+            Group {
+                if isBusy {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .scaleEffect(0.72)
+                } else {
+                    Image(systemName: systemName)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .contentTransition(.symbolEffect(.replace))
+                        .foregroundStyle(tint ?? Color.primary.opacity(isHovering ? 0.94 : 0.68))
+                }
+            }
+            .glassOrb(
+                size: 28,
+                variant: .clear,
+                tint: isHovering ? LiquidGlassColors.hoverHighlight : nil,
+                interactive: !isBusy
+            )
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .disabled(isBusy)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.14)) {
                 isHovering = hovering
@@ -402,6 +540,144 @@ private struct TurnFooterIconButton: View {
         }
         .help(helpText)
         .accessibilityLabel(Text(helpText))
+    }
+}
+
+// MARK: - TurnRegenerateSplitButton
+
+/// Combined Liquid Glass regenerate capsule pairing instant `↻` retry with a compact `▾` menu
+/// for tone/length/no-tool variants and model switching.
+private struct TurnRegenerateSplitButton: View {
+
+    let hasArtifacts: Bool
+    let availableModels: [ModelOption]
+    let selectedModelId: String?
+    let onTryAgain: () -> Void
+    let onSelectVariant: (RegenerateVariant, String?) -> Void
+
+    @State private var isHoveringRetry = false
+    @State private var isHoveringMenu = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: onTryAgain) {
+                ZStack {
+                    Capsule(style: .continuous)
+                        .fill(isHoveringRetry ? LiquidGlassColors.hoverHighlight : Color.clear)
+
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Color.primary.opacity(isHoveringRetry ? 0.96 : 0.70))
+                }
+                .frame(width: 26, height: 22)
+                .contentShape(Capsule(style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.14)) {
+                    isHoveringRetry = hovering
+                }
+            }
+            .help(String(localized: "Regenerate"))
+            .accessibilityLabel(Text("Regenerate"))
+
+            Rectangle()
+                .fill(LiquidGlassColors.subtleHairline)
+                .frame(width: 1, height: 12)
+
+            Menu {
+                Button {
+                    onSelectVariant(.tryAgain, nil)
+                } label: {
+                    Label("Try again", systemImage: "arrow.clockwise")
+                }
+
+                Divider()
+
+                Button {
+                    onSelectVariant(.shorter, nil)
+                } label: {
+                    Label("Shorter", systemImage: "arrow.down.right.and.arrow.up.left")
+                }
+
+                Button {
+                    onSelectVariant(.longer, nil)
+                } label: {
+                    Label("Longer", systemImage: "arrow.up.left.and.arrow.down.right")
+                }
+
+                Button {
+                    onSelectVariant(.simpler, nil)
+                } label: {
+                    Label("Simpler", systemImage: "sparkles")
+                }
+
+                Button {
+                    onSelectVariant(.casual, nil)
+                } label: {
+                    Label("More casual", systemImage: "face.smiling")
+                }
+
+                Button {
+                    onSelectVariant(.professional, nil)
+                } label: {
+                    Label("More professional", systemImage: "briefcase")
+                }
+
+                if hasArtifacts {
+                    Divider()
+
+                    Button {
+                        onSelectVariant(.retryWithoutTools, nil)
+                    } label: {
+                        Label("Retry without tools", systemImage: "wrench.and.screwdriver")
+                    }
+                }
+
+                if availableModels.count > 1 {
+                    Divider()
+
+                    Menu("Switch model & retry") {
+                        ForEach(availableModels) { option in
+                            Button {
+                                onSelectVariant(.tryAgain, option.id)
+                            } label: {
+                                if option.id == selectedModelId {
+                                    Label(option.displayName, systemImage: "checkmark")
+                                } else {
+                                    Text(option.displayName)
+                                }
+                            }
+                        }
+                    }
+                }
+            } label: {
+                ZStack {
+                    Capsule(style: .continuous)
+                        .fill(isHoveringMenu ? LiquidGlassColors.hoverHighlight : Color.clear)
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(Color.primary.opacity(isHoveringMenu ? 0.94 : 0.64))
+                }
+                .frame(width: 20, height: 22)
+                .contentShape(Capsule(style: .continuous))
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .frame(width: 20, height: 22)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.14)) {
+                    isHoveringMenu = hovering
+                }
+            }
+            .help(String(localized: "Regenerate options"))
+            .accessibilityLabel(Text("Regenerate options"))
+        }
+        .padding(.horizontal, 3)
+        .frame(height: 28)
+        .glassCapsule(variant: .clear, interactive: true)
     }
 }
 

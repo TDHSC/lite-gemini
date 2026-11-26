@@ -95,6 +95,8 @@ final class AppCoordinator: ObservableObject {
 
     /// Published lazily when Quick Mode allocates its isolated `GeminiSessionEngine` on first summon.
     @Published private(set) var activeQuickEngine: GeminiSessionEngine?
+    /// Published lazily while `Btw` holds an isolated temporary-chat `GeminiSessionEngine`.
+    @Published private(set) var activeBtwEngine: GeminiSessionEngine?
 
     /// Monotonically incremented token focusing Main Window's native `ComposerTextView`.
     @Published var mainComposerFocusTrigger: Int = 0
@@ -102,11 +104,17 @@ final class AppCoordinator: ObservableObject {
     private var hasBootstrappedMainNativeEngine: Bool = false
     private var cancellables: Set<AnyCancellable> = []
 
+    @MainActor
+    private final class WeakCoordinatorBox {
+        weak var coordinator: AppCoordinator?
+    }
+
     // MARK: - Initialization
 
     init(settings: SettingsManager = .shared) {
         let classicVM = ClassicWebViewModel()
         let sharedCache = SWRConversationCache()
+        let weakBox = WeakCoordinatorBox()
 
         let mainEngine = GeminiSessionEngine(
             websiteDataStore: .default(),
@@ -119,6 +127,25 @@ final class AppCoordinator: ObservableObject {
         let workspace = MainWorkspaceStore(
             transport: mainEngine,
             cache: sharedCache,
+            btwTransportFactory: { [weak classicVM] in
+                let btwEngine = GeminiSessionEngine(
+                    websiteDataStore: .default(),
+                    userAgent: SettingsManager.shared.userAgent,
+                    surfaceBackgroundColor: AppDelegate.geminiSurfaceNSColor,
+                    defaultTemporaryChat: { true }
+                )
+                btwEngine.onDownloadNotice = { [weak classicVM] notice in
+                    classicVM?.downloadNotice = notice
+                }
+                weakBox.coordinator?.activeBtwEngine = btwEngine
+                return btwEngine
+            },
+            onTearDownBtwTransport: { transport in
+                if let engine = transport as? GeminiSessionEngine,
+                   weakBox.coordinator?.activeBtwEngine === engine {
+                    weakBox.coordinator?.activeBtwEngine = nil
+                }
+            },
             backgroundTimeoutSeconds: { SettingsManager.shared.backgroundTimeout.seconds },
             defaultTemporaryChat: { SettingsManager.shared.defaultTemporaryChat }
         )
@@ -141,7 +168,6 @@ final class AppCoordinator: ObservableObject {
         self.workspaceStore = workspace
         self.handoffCoordinator = handoff
 
-        var weakSelf: AppCoordinator?
         let quickController = QuickWorkspaceController(
             transportFactory: { [weak classicVM] in
                 let quickEngine = GeminiSessionEngine(
@@ -153,7 +179,7 @@ final class AppCoordinator: ObservableObject {
                 quickEngine.onDownloadNotice = { [weak classicVM] notice in
                     classicVM?.downloadNotice = notice
                 }
-                weakSelf?.activeQuickEngine = quickEngine
+                weakBox.coordinator?.activeQuickEngine = quickEngine
                 return quickEngine
             },
             cache: sharedCache,
@@ -162,7 +188,7 @@ final class AppCoordinator: ObservableObject {
             }
         )
         self.quickWorkspaceController = quickController
-        weakSelf = self
+        weakBox.coordinator = self
 
         mainEngine.onDownloadNotice = { [weak classicVM] notice in
             classicVM?.downloadNotice = notice
@@ -195,6 +221,59 @@ final class AppCoordinator: ObservableObject {
         mainComposerFocusTrigger &+= 1
     }
 
+    // MARK: - v2.2 Keyboard Shortcut & Selection Commands
+
+    func toggleSearchChats() {
+        guard SettingsManager.shared.isNativeUIActive, workspaceStore.authState != .signedOut else {
+            return
+        }
+        let wasPresented = workspaceStore.isSearchModalPresented
+        workspaceStore.toggleSearchModal()
+        if wasPresented {
+            focusMainComposer()
+        }
+    }
+
+    func quoteCurrentSelectionIntoComposer() {
+        guard SettingsManager.shared.isNativeUIActive, workspaceStore.authState != .signedOut else {
+            return
+        }
+        guard let selectedText = ResponseSelectionPillController.captureSelectedTextNonDestructively(),
+              !selectedText.isEmpty else {
+            return
+        }
+        if quickWorkspaceController.isVisible, let quickSession = quickWorkspaceController.activeSessionIfLoaded {
+            let trimmed = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedTurnId = quickSession.turns.last(where: {
+                !trimmed.isEmpty && $0.assistantMarkdown.localizedStandardContains(trimmed)
+            })?.id
+            _ = quickSession.draft.addQuote(
+                QuotedPassage(
+                    quotedText: selectedText,
+                    conversationId: quickSession.conversationId,
+                    turnId: resolvedTurnId
+                )
+            )
+            return
+        }
+        workspaceStore.stageQuotedText(selectedText)
+        focusMainComposer()
+    }
+
+    func triggerBtwFromShortcut() {
+        guard SettingsManager.shared.isNativeUIActive, workspaceStore.authState != .signedOut else {
+            return
+        }
+        let selectedText = ResponseSelectionPillController.captureSelectedTextNonDestructively()
+        if let selectedText, !selectedText.isEmpty {
+            workspaceStore.openBtwPanel(withQuotedText: selectedText)
+        } else if workspaceStore.btwStore.isPresented {
+            workspaceStore.btwStore.close()
+        } else {
+            workspaceStore.openBtwPanel(withQuotedText: nil)
+        }
+    }
+
     func handleSignInFromMain() {
         mainSessionEngine.openSignInPopup()
     }
@@ -216,6 +295,19 @@ final class AppCoordinator: ObservableObject {
         handoffCoordinator.switchToWebMode(overrideConversationId: conversationId)
     }
 
+    func openQuickArtifactInMainWindow(_ artifact: ArtifactCardInfo) {
+        SettingsManager.shared.enableNativeUI = true
+        SettingsManager.shared.interfaceMode = .native
+        bootstrapMainNativeEngineIfNeeded()
+        WindowVisibility.shared.show()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let quickSession = self.quickWorkspaceController.session
+            await self.quickWorkspaceController.closeQuickWindow()
+            await self.workspaceStore.openQuickModeArtifact(from: quickSession, artifact: artifact)
+        }
+    }
+
     // MARK: - Private Wiring
 
     private func bindSettingsAndHotKeys(settings: SettingsManager) {
@@ -231,6 +323,7 @@ final class AppCoordinator: ObservableObject {
             .sink { [weak self] ua in
                 self?.mainSessionEngine.updateUserAgent(ua)
                 self?.activeQuickEngine?.updateUserAgent(ua)
+                self?.activeBtwEngine?.updateUserAgent(ua)
             }
             .store(in: &cancellables)
 
@@ -286,6 +379,10 @@ final class AppCoordinator: ObservableObject {
                         store: coordinator.quickWorkspaceController.session,
                         isExpanded: isExpanded,
                         topContentInset: LiquidGlassMetrics.topBarHeight,
+                        isQuickMode: true,
+                        onOpenArtifact: { [weak coordinator] artifact in
+                            coordinator?.openQuickArtifactInMainWindow(artifact)
+                        },
                         onOpenInWebMode: { [weak coordinator] convId in
                             guard let coordinator else { return }
                             Task { @MainActor in

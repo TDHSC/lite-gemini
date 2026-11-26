@@ -9,16 +9,22 @@ nonisolated struct DraftRollbackSnapshot: Equatable, Sendable {
 
     let text: String
     let stagedAttachments: [StagedAttachment]
+    let quotes: [QuotedPassage]
     let editingTurnId: String?
+    let activeToolMode: ComposerToolMode?
 
     init(
         text: String,
         stagedAttachments: [StagedAttachment] = [],
-        editingTurnId: String? = nil
+        quotes: [QuotedPassage] = [],
+        editingTurnId: String? = nil,
+        activeToolMode: ComposerToolMode? = nil
     ) {
         self.text = text
         self.stagedAttachments = stagedAttachments
+        self.quotes = quotes
         self.editingTurnId = editingTurnId
+        self.activeToolMode = activeToolMode
     }
 }
 
@@ -31,16 +37,32 @@ nonisolated struct DraftRollbackSnapshot: Equatable, Sendable {
 @MainActor
 final class ComposerDraftState: ObservableObject {
 
+    // MARK: - Constants
+
+    static let maxStagedQuotes: Int = QuotedPassage.maxStagedCount
+    static let quoteUndoRetentionDuration: Duration = .seconds(5)
+
     // MARK: - Published State
 
     /// Current text inside the native composer.
     @Published var text: String
     /// Files and images staged for the next prompt submission.
     @Published var stagedAttachments: [StagedAttachment]
+    /// Highlighted passages staged as structured quotes above the composer (hard cap: 5).
+    @Published var quotes: [QuotedPassage]
+    /// Whether the max-5 staged quotes info banner is currently visible.
+    @Published var isQuoteCapAlertVisible: Bool
+    /// Most recently removed quote retained briefly for single-step undo restore.
+    @Published private(set) var lastRemovedQuote: QuotedPassage?
     /// Identifier of the latest user turn currently being edited, or `nil` for a normal send.
     @Published var editingTurnId: String?
     /// Whether the folder-upload web-mode fallback banner is currently visible.
     @Published var showsFolderWebFallbackBanner: Bool
+    /// Optional composer tool mode (`Canvas` or `Deep Research`) active for the next prompt.
+    @Published var activeToolMode: ComposerToolMode?
+
+    private var lastRemovedQuoteIndex: Int?
+    private var quoteUndoExpiryTask: Task<Void, Never>?
 
     // MARK: - Computed Properties
 
@@ -59,9 +81,9 @@ final class ComposerDraftState: ObservableObject {
         editingTurnId != nil
     }
 
-    /// Whether the composer holds any unsent draft text, attachments, or edit state.
+    /// Whether the composer holds any unsent draft text, attachments, quotes, or edit state.
     var hasUnsentContent: Bool {
-        canSubmit || isEditing
+        canSubmit || isEditing || !quotes.isEmpty
     }
 
     /// Lightweight metadata summaries for all currently staged attachments.
@@ -69,18 +91,117 @@ final class ComposerDraftState: ObservableObject {
         stagedAttachments.map(\.summary)
     }
 
+    /// Banner display items corresponding to `quotes`.
+    var quoteBannerItems: [ComposerQuoteBannerItem] {
+        quotes.map { ComposerQuoteBannerItem(id: $0.id, quotedText: $0.quotedText, turnId: $0.turnId) }
+    }
+
     // MARK: - Initialization
 
     init(
         text: String = "",
         stagedAttachments: [StagedAttachment] = [],
+        quotes: [QuotedPassage] = [],
         editingTurnId: String? = nil,
-        showsFolderWebFallbackBanner: Bool = false
+        showsFolderWebFallbackBanner: Bool = false,
+        activeToolMode: ComposerToolMode? = nil
     ) {
         self.text = text
         self.stagedAttachments = stagedAttachments
+        self.quotes = Array(quotes.prefix(Self.maxStagedQuotes))
+        self.isQuoteCapAlertVisible = false
+        self.lastRemovedQuote = nil
         self.editingTurnId = editingTurnId
         self.showsFolderWebFallbackBanner = showsFolderWebFallbackBanner
+        self.activeToolMode = activeToolMode
+    }
+
+    isolated deinit {
+        quoteUndoExpiryTask?.cancel()
+    }
+
+    // MARK: - Quote Mutations
+
+    /// Stages a quoted passage above the composer, deduplicating identical `(turnId, quotedText)`
+    /// entries and enforcing the 5-quote cap. Returns `false` and shows the cap banner when full.
+    @discardableResult
+    func addQuote(_ passage: QuotedPassage) -> Bool {
+        guard !passage.quotedText.isEmpty else {
+            return false
+        }
+        if quotes.contains(where: { $0.turnId == passage.turnId && $0.quotedText == passage.quotedText }) {
+            isQuoteCapAlertVisible = false
+            return true
+        }
+        guard quotes.count < Self.maxStagedQuotes else {
+            isQuoteCapAlertVisible = true
+            return false
+        }
+        isQuoteCapAlertVisible = false
+        quotes.append(passage)
+        return true
+    }
+
+    /// Removes a staged quote by identifier and retains it in the single-step undo buffer for 5 seconds.
+    func removeQuote(id: UUID) {
+        guard let index = quotes.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        let removed = quotes.remove(at: index)
+        isQuoteCapAlertVisible = false
+        lastRemovedQuote = removed
+        lastRemovedQuoteIndex = index
+
+        quoteUndoExpiryTask?.cancel()
+        quoteUndoExpiryTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: Self.quoteUndoRetentionDuration)
+            } catch {
+                return
+            }
+            guard let self, self.lastRemovedQuote?.id == removed.id else {
+                return
+            }
+            self.lastRemovedQuote = nil
+            self.lastRemovedQuoteIndex = nil
+            self.quoteUndoExpiryTask = nil
+        }
+    }
+
+    /// Restores the most recently removed quote if still within the undo window and under the 5-quote cap.
+    @discardableResult
+    func undoRemoveQuote() -> Bool {
+        guard let restored = lastRemovedQuote else {
+            return false
+        }
+        guard quotes.count < Self.maxStagedQuotes else {
+            isQuoteCapAlertVisible = true
+            return false
+        }
+        let targetIndex = min(lastRemovedQuoteIndex ?? quotes.count, quotes.count)
+        quotes.insert(restored, at: targetIndex)
+        clearQuoteUndoBuffer()
+        isQuoteCapAlertVisible = false
+        return true
+    }
+
+    /// Dismisses the max-5 staged quotes info banner.
+    func dismissQuoteCapAlert() {
+        isQuoteCapAlertVisible = false
+    }
+
+    /// Clears all staged quotes, cap alerts, and single-step undo state.
+    func clearQuotes() {
+        quotes.removeAll()
+        isQuoteCapAlertVisible = false
+        clearQuoteUndoBuffer()
+    }
+
+    private func clearQuoteUndoBuffer() {
+        quoteUndoExpiryTask?.cancel()
+        quoteUndoExpiryTask = nil
+        lastRemovedQuote = nil
+        lastRemovedQuoteIndex = nil
     }
 
     // MARK: - Attachment Mutations
@@ -110,11 +231,13 @@ final class ComposerDraftState: ObservableObject {
 
     // MARK: - Edit Lifecycle
 
-    /// Enters edit mode for the given user turn, loading its original prompt into the composer.
-    func beginEditing(turnId: String, prompt: String) {
+    /// Enters edit mode for the given user turn, loading its original prompt and quotes into the composer.
+    func beginEditing(turnId: String, prompt: String, quotes: [QuotedPassage] = []) {
         editingTurnId = turnId
         text = prompt
         stagedAttachments.removeAll()
+        clearQuotes()
+        self.quotes = Array(quotes.prefix(Self.maxStagedQuotes))
         showsFolderWebFallbackBanner = false
     }
 
@@ -132,12 +255,18 @@ final class ComposerDraftState: ObservableObject {
         let snapshot = DraftRollbackSnapshot(
             text: text,
             stagedAttachments: stagedAttachments,
-            editingTurnId: editingTurnId
+            quotes: quotes,
+            editingTurnId: editingTurnId,
+            activeToolMode: activeToolMode
         )
         text = ""
         stagedAttachments.removeAll()
+        clearQuotes()
         editingTurnId = nil
         showsFolderWebFallbackBanner = false
+        if activeToolMode == .deepResearch {
+            activeToolMode = nil
+        }
         return snapshot
     }
 
@@ -146,14 +275,20 @@ final class ComposerDraftState: ObservableObject {
     func restoreRollbackSnapshot(_ snapshot: DraftRollbackSnapshot) {
         text = snapshot.text
         stagedAttachments = snapshot.stagedAttachments
+        quotes = Array(snapshot.quotes.prefix(Self.maxStagedQuotes))
+        isQuoteCapAlertVisible = false
+        clearQuoteUndoBuffer()
         editingTurnId = snapshot.editingTurnId
+        activeToolMode = snapshot.activeToolMode
     }
 
-    /// Clears all draft text, attachments, edit state, and banners.
+    /// Clears all draft text, attachments, quotes, edit state, and banners.
     func reset() {
         text = ""
         stagedAttachments.removeAll()
+        clearQuotes()
         editingTurnId = nil
         showsFolderWebFallbackBanner = false
+        activeToolMode = nil
     }
 }

@@ -75,7 +75,11 @@ nonisolated enum PasteboardAttachmentClassifier {
 
         for url in urls where url.isFileURL {
             if isDirectoryURL(url) {
-                containsDirectory = true
+                if let folderAttachment = FolderAttachmentScanner.scanDirectory(url) {
+                    attachments.append(folderAttachment)
+                } else {
+                    containsDirectory = true
+                }
                 continue
             }
 

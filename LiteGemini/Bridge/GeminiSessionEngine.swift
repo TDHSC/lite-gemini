@@ -35,6 +35,160 @@ protocol GeminiWriteDriving: AnyObject {
 
     /// Synchronizes the hidden page's temporary-chat toggle to the desired enabled state.
     func setTemporaryChat(in webView: WKWebView, enabled: Bool) async throws
+
+    /// Synchronizes an optional composer tool mode (`Canvas` or `Deep Research`) on the hidden page.
+    func setComposerTool(in webView: WKWebView, tool: ComposerToolMode?) async throws
+
+    /// Clicks the `Start Research` confirmation button on a Deep Research plan card.
+    func confirmDeepResearchPlan(in webView: WKWebView) async throws
+
+    /// Probes the hidden page DOM for Deep Research plans, progress status, or Canvas text.
+    func probeLatestTurnDOMArtifacts(in webView: WKWebView) async -> (
+        planArtifact: ArtifactCardInfo?,
+        progress: DeepResearchProgress?,
+        canvasText: String?,
+        canvasTitle: String?
+    )
+
+    /// Injects prompt text with staged quotes and attachments into the hidden page and submits.
+    func submitPrompt(
+        in webView: WKWebView,
+        text: String,
+        quotes: [QuotedPassage],
+        attachments: [StagedAttachment],
+        modelId: String?,
+        isTemporaryChat: Bool
+    ) async throws
+
+    /// Regenerates the latest assistant turn with a specific variant and optional model switch.
+    func regenerateLastTurn(
+        in webView: WKWebView,
+        variant: RegenerateVariant,
+        modelId: String?
+    ) async throws
+
+    /// Branches a conversation from the specified turn via Omakase GraphQL or DOM fallback.
+    func branchConversation(
+        in webView: WKWebView,
+        conversationId: String,
+        requestId: String?,
+        responseId: String?
+    ) async -> String?
+
+    /// Creates a public `gemini.google.com/share/<id>` link for the conversation or single turn.
+    func createPublicShareLink(
+        in webView: WKWebView,
+        conversationId: String,
+        scope: ShareLinkScope,
+        selectedDraftId: String?
+    ) async throws -> ShareLinkResult
+
+    /// Exports a Markdown message to Google Docs, Gmail Drafts, Colab, or Sheets.
+    func exportToCloudService(
+        in webView: WKWebView,
+        service: CloudExportService,
+        title: String,
+        markdownText: String
+    ) async throws -> URL
+
+    /// Searches remote chat history via `SearchChatsPageQuery`.
+    func searchRemoteConversations(
+        in webView: WKWebView,
+        query: String,
+        limit: Int
+    ) async -> [ConversationSearchHit]
+
+    /// Synthesizes a spoken MP3 audio chunk via `useResponseTtsQuery`.
+    func synthesizeSpeechChunk(
+        in webView: WKWebView,
+        text: String,
+        locale: String
+    ) async -> Data?
+}
+
+extension GeminiWriteDriving {
+
+    func setComposerTool(in webView: WKWebView, tool: ComposerToolMode?) async throws {}
+
+    func confirmDeepResearchPlan(in webView: WKWebView) async throws {}
+
+    func probeLatestTurnDOMArtifacts(in webView: WKWebView) async -> (
+        planArtifact: ArtifactCardInfo?,
+        progress: DeepResearchProgress?,
+        canvasText: String?,
+        canvasTitle: String?
+    ) {
+        (nil, nil, nil, nil)
+    }
+
+    func submitPrompt(
+        in webView: WKWebView,
+        text: String,
+        quotes: [QuotedPassage],
+        attachments: [StagedAttachment],
+        modelId: String?,
+        isTemporaryChat: Bool
+    ) async throws {
+        let combined = QuotedPassage.formatPrompt(text, with: quotes)
+        try await submitPrompt(
+            in: webView,
+            text: combined,
+            attachments: attachments,
+            modelId: modelId,
+            isTemporaryChat: isTemporaryChat
+        )
+    }
+
+    func regenerateLastTurn(
+        in webView: WKWebView,
+        variant: RegenerateVariant,
+        modelId: String?
+    ) async throws {
+        try await regenerateLastTurn(in: webView)
+    }
+
+    func branchConversation(
+        in webView: WKWebView,
+        conversationId: String,
+        requestId: String?,
+        responseId: String?
+    ) async -> String? {
+        nil
+    }
+
+    func createPublicShareLink(
+        in webView: WKWebView,
+        conversationId: String,
+        scope: ShareLinkScope,
+        selectedDraftId: String?
+    ) async throws -> ShareLinkResult {
+        throw GeminiTransportActionError.unsupported
+    }
+
+    func exportToCloudService(
+        in webView: WKWebView,
+        service: CloudExportService,
+        title: String,
+        markdownText: String
+    ) async throws -> URL {
+        throw GeminiTransportActionError.unsupported
+    }
+
+    func searchRemoteConversations(
+        in webView: WKWebView,
+        query: String,
+        limit: Int
+    ) async -> [ConversationSearchHit] {
+        []
+    }
+
+    func synthesizeSpeechChunk(
+        in webView: WKWebView,
+        text: String,
+        locale: String
+    ) async -> Data? {
+        nil
+    }
 }
 
 // MARK: - WeakBridgeMessageHandler
@@ -147,6 +301,7 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
         var accumulator = StreamingDeltaAccumulator()
         var boundRequestId: String?
         var driverTask: Task<Void, Never>?
+        var progressPollTask: Task<Void, Never>?
     }
 
     private struct HomeLoadCollector {
@@ -557,6 +712,144 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
         try await driver.setTemporaryChat(in: webView, enabled: enabled)
         isTemporaryChat = enabled
         onEvent?(.temporaryChatStateChanged(enabled))
+    }
+
+    func setComposerTool(_ tool: ComposerToolMode?) async throws {
+        guard let driver = writeDriver else { return }
+        try await driver.setComposerTool(in: webView, tool: tool)
+    }
+
+    func confirmDeepResearchPlan() -> AsyncThrowingStream<StreamingDelta, Error> {
+        startStreamSession(enableProgressPolling: true) { [weak self] driver in
+            guard let self else { return }
+            try await driver.confirmDeepResearchPlan(in: self.webView)
+        }
+    }
+
+    // MARK: - ChatTransport v2.2 Conversational Power Tools
+
+    func sendPrompt(
+        text: String,
+        quotes: [QuotedPassage],
+        attachments: [StagedAttachment],
+        modelId: String?,
+        isTemporaryChat: Bool
+    ) -> AsyncThrowingStream<StreamingDelta, Error> {
+        startStreamSession { [weak self] driver in
+            guard let self else { return }
+            try await driver.submitPrompt(
+                in: self.webView,
+                text: text,
+                quotes: quotes,
+                attachments: attachments,
+                modelId: modelId,
+                isTemporaryChat: isTemporaryChat
+            )
+        }
+    }
+
+    func sendPrompt(
+        _ text: String,
+        quotes: [QuotedPassage],
+        attachments: [StagedAttachment]
+    ) async {
+        let stream = sendPrompt(
+            text: text,
+            quotes: quotes,
+            attachments: attachments,
+            modelId: selectedModelId,
+            isTemporaryChat: isTemporaryChat
+        )
+        do {
+            for try await _ in stream {}
+        } catch {}
+    }
+
+    func regenerateLastTurn(
+        variant: RegenerateVariant,
+        modelId: String?
+    ) -> AsyncThrowingStream<StreamingDelta, Error> {
+        startStreamSession { [weak self] driver in
+            guard let self else { return }
+            try await driver.regenerateLastTurn(
+                in: self.webView,
+                variant: variant,
+                modelId: modelId
+            )
+            if let modelId = modelId?.trimmingCharacters(in: .whitespacesAndNewlines), !modelId.isEmpty {
+                self.selectedModelId = modelId
+                self.onEvent?(.modelsUpdated(available: self.availableModels, selectedId: modelId))
+            }
+        }
+    }
+
+    func regenerateLatestResponse(variant: RegenerateVariant, modelId: String?) async {
+        let stream = regenerateLastTurn(variant: variant, modelId: modelId)
+        do {
+            for try await _ in stream {}
+        } catch {}
+    }
+
+    func branchConversation(
+        conversationId: String,
+        requestId: String?,
+        responseId: String?
+    ) async -> String? {
+        guard let driver = writeDriver else {
+            return nil
+        }
+        return await driver.branchConversation(
+            in: webView,
+            conversationId: conversationId,
+            requestId: requestId,
+            responseId: responseId
+        )
+    }
+
+    func createPublicShareLink(
+        conversationId: String,
+        scope: ShareLinkScope,
+        selectedDraftId: String?
+    ) async throws -> ShareLinkResult {
+        guard let driver = writeDriver else {
+            throw GeminiTransportActionError.unsupported
+        }
+        return try await driver.createPublicShareLink(
+            in: webView,
+            conversationId: conversationId,
+            scope: scope,
+            selectedDraftId: selectedDraftId
+        )
+    }
+
+    func exportToCloudService(
+        service: CloudExportService,
+        title: String,
+        markdownText: String
+    ) async throws -> URL {
+        guard let driver = writeDriver else {
+            throw GeminiTransportActionError.unsupported
+        }
+        return try await driver.exportToCloudService(
+            in: webView,
+            service: service,
+            title: title,
+            markdownText: markdownText
+        )
+    }
+
+    func searchRemoteConversations(query: String, limit: Int) async -> [ConversationSearchHit] {
+        guard let driver = writeDriver else {
+            return []
+        }
+        return await driver.searchRemoteConversations(in: webView, query: query, limit: limit)
+    }
+
+    func synthesizeSpeechChunk(text: String, locale: String) async -> Data? {
+        guard let driver = writeDriver else {
+            return nil
+        }
+        return await driver.synthesizeSpeechChunk(in: webView, text: text, locale: locale)
     }
 
     // MARK: - Sign-In, Add Account & Challenge Popups
@@ -1195,7 +1488,7 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
                 session.continuation.yield(cumulative)
 
                 if cumulative.isFinal {
-                    finishActiveStream(sessionId: session.id, throwing: nil)
+                    finalizeStreamWithDOMEnrichment(sessionId: session.id, cumulative: cumulative)
                 }
             }
         }
@@ -1213,6 +1506,7 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
     }
 
     private func startStreamSession(
+        enableProgressPolling: Bool = false,
         driverAction: @escaping @MainActor (any GeminiWriteDriving) async throws -> Void
     ) -> AsyncThrowingStream<StreamingDelta, Error> {
         finishActiveStream(throwing: ChatTransportError.cancelled)
@@ -1225,6 +1519,7 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
                         return
                     }
                     self.activeStreamSession?.driverTask?.cancel()
+                    self.activeStreamSession?.progressPollTask?.cancel()
                     self.activeStreamSession = nil
                 }
             }
@@ -1245,12 +1540,88 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
                 }
             }
 
+            let pollTask: Task<Void, Never>? = enableProgressPolling
+                ? Task { @MainActor [weak self] in
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .milliseconds(1400))
+                        guard !Task.isCancelled,
+                              let self,
+                              let driver = self.writeDriver,
+                              var current = self.activeStreamSession,
+                              current.id == sessionId else {
+                            return
+                        }
+                        let dom = await driver.probeLatestTurnDOMArtifacts(in: self.webView)
+                        if let progress = dom.progress {
+                            let progressCard = ArtifactCardInfo(
+                                id: "deep-research-progress",
+                                kind: .deepResearch,
+                                title: String(localized: "Deep Research"),
+                                subtitle: progress.statusText,
+                                progress: progress
+                            )
+                            let merged = current.accumulator.merge(
+                                StreamingDelta(artifacts: [progressCard], isFinal: false)
+                            )
+                            self.activeStreamSession = current
+                            current.continuation.yield(merged)
+                        }
+                    }
+                }
+                : nil
+
             self.activeStreamSession = ActiveStreamSession(
                 id: sessionId,
                 continuation: continuation,
                 preexistingRequestIds: Set(self.streamBuffers.keys),
-                driverTask: driverTask
+                driverTask: driverTask,
+                progressPollTask: pollTask
             )
+        }
+    }
+
+    private func finalizeStreamWithDOMEnrichment(sessionId: UUID, cumulative: StreamingDelta) {
+        guard let driver = writeDriver else {
+            finishActiveStream(sessionId: sessionId, throwing: nil)
+            return
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard let self, var current = self.activeStreamSession, current.id == sessionId else {
+                return
+            }
+            let dom = await driver.probeLatestTurnDOMArtifacts(in: self.webView)
+            var extraArtifacts: [ArtifactCardInfo] = []
+
+            if let planArtifact = dom.planArtifact,
+               !cumulative.artifacts.contains(where: { $0.isDeepResearchPlanCard }) {
+                extraArtifacts.append(planArtifact)
+            }
+
+            if let canvasText = dom.canvasText, !canvasText.isEmpty {
+                if let existingIdx = cumulative.artifacts.firstIndex(where: { !$0.hasNativeContent && ($0.kind == .canvas || $0.kind == .deepResearch) }) {
+                    let base = cumulative.artifacts[existingIdx]
+                    extraArtifacts.append(
+                        ArtifactCardInfo(
+                            id: base.id,
+                            kind: base.kind,
+                            title: dom.canvasTitle ?? base.title,
+                            subtitle: base.subtitle,
+                            content: canvasText,
+                            language: base.language
+                        )
+                    )
+                }
+            }
+
+            if !extraArtifacts.isEmpty {
+                let enriched = current.accumulator.merge(
+                    StreamingDelta(artifacts: extraArtifacts, isFinal: true)
+                )
+                self.activeStreamSession = current
+                current.continuation.yield(enriched)
+            }
+            self.finishActiveStream(sessionId: sessionId, throwing: nil)
         }
     }
 
@@ -1263,6 +1634,7 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
         }
         activeStreamSession = nil
         session.driverTask?.cancel()
+        session.progressPollTask?.cancel()
         if let error {
             session.continuation.finish(throwing: error)
         } else {

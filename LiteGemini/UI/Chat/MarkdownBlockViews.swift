@@ -62,19 +62,21 @@ private struct MarkdownBlockView: View {
     let foregroundOpacity: Double
     let listDepth: Int
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         switch block.kind {
         case .heading(let level, let runs):
             headingView(level: level, runs: runs)
 
         case .paragraph(let runs):
-            Text(attributedString(from: runs, fontSize: baseFontSize, baseWeight: .regular))
-                .foregroundStyle(Color.primary.opacity(foregroundOpacity))
-                .lineSpacing(4)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            MarkdownRichRunsTextView(
+                runs: runs,
+                fontSize: baseFontSize,
+                baseWeight: .regular
+            )
+            .foregroundStyle(Color.primary.opacity(foregroundOpacity))
+            .lineSpacing(4)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
 
         case .list(let ordered, let startIndex, let items):
             listView(ordered: ordered, startIndex: startIndex, items: items)
@@ -95,7 +97,7 @@ private struct MarkdownBlockView: View {
             )
 
         case .mathBlock(let latex, let isClosed):
-            MarkdownMathBlockView(latex: latex, isClosed: isClosed)
+            MathBlockCardView(latex: latex, isClosed: isClosed)
 
         case .thematicBreak:
             Rectangle()
@@ -121,12 +123,16 @@ private struct MarkdownBlockView: View {
             (baseFontSize, .semibold, 3)
         }
 
-        return Text(attributedString(from: runs, fontSize: size, baseWeight: weight))
-            .foregroundStyle(Color.primary.opacity(level >= 5 ? foregroundOpacity * 0.86 : 0.96))
-            .lineSpacing(3)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, topPadding)
+        return MarkdownRichRunsTextView(
+            runs: runs,
+            fontSize: size,
+            baseWeight: weight
+        )
+        .foregroundStyle(Color.primary.opacity(level >= 5 ? foregroundOpacity * 0.86 : 0.96))
+        .lineSpacing(3)
+        .textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.top, topPadding)
     }
 
     private func listView(ordered: Bool, startIndex: Int, items: [MarkdownListItem]) -> some View {
@@ -192,21 +198,6 @@ private struct MarkdownBlockView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 2)
-    }
-
-    // MARK: - Inline AttributedString Conversion
-
-    private func attributedString(
-        from runs: [MarkdownInlineRun],
-        fontSize: CGFloat,
-        baseWeight: Font.Weight
-    ) -> AttributedString {
-        MarkdownAttributedStringBuilder.build(
-            from: runs,
-            fontSize: fontSize,
-            baseWeight: baseWeight,
-            colorScheme: colorScheme
-        )
     }
 }
 
@@ -359,13 +350,10 @@ private struct MarkdownTableView: View {
             frameAlignment = .trailing
         }
 
-        return Text(
-            MarkdownAttributedStringBuilder.build(
-                from: runs,
-                fontSize: baseFontSize,
-                baseWeight: isHeader ? .semibold : .regular,
-                colorScheme: colorScheme
-            )
+        return MarkdownRichRunsTextView(
+            runs: runs,
+            fontSize: baseFontSize,
+            baseWeight: isHeader ? .semibold : .regular
         )
         .foregroundStyle(Color.primary.opacity(isHeader ? 0.95 : foregroundOpacity))
         .multilineTextAlignment(textAlignment)
@@ -378,32 +366,67 @@ private struct MarkdownTableView: View {
     }
 }
 
-// MARK: - MarkdownMathBlockView
+// MARK: - MarkdownRichRunsTextView
 
-private struct MarkdownMathBlockView: View {
+/// Renders inline runs as a fast single `AttributedString` when no inline LaTeX is present, or
+/// seamlessly interpolates baseline-aligned CoreText `SwiftMath` inline glyphs when `.inlineMath`
+/// segments occur.
+struct MarkdownRichRunsTextView: View {
 
-    let latex: String
-    let isClosed: Bool
+    let runs: [MarkdownInlineRun]
+    let fontSize: CGFloat
+    let baseWeight: Font.Weight
+
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
-            Text(latex.isEmpty ? " " : latex)
-                .font(.system(size: 13, weight: .regular, design: .monospaced))
-                .foregroundStyle(Color.primary.opacity(0.92))
-                .lineSpacing(4)
-                .textSelection(.enabled)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        if runs.contains(where: { $0.kind == .inlineMath }) {
+            composedMathText
+        } else {
+            Text(
+                MarkdownAttributedStringBuilder.build(
+                    from: runs,
+                    fontSize: fontSize,
+                    baseWeight: baseWeight,
+                    colorScheme: colorScheme
+                )
+            )
         }
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(LiquidGlassColors.recessedCodeSurface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(LiquidGlassColors.subtleHairline, lineWidth: LiquidGlassMetrics.hairlineWidth)
-        )
-        .accessibilityLabel(Text("Math expression"))
+    }
+
+    private var composedMathText: Text {
+        let isDark = colorScheme == .dark
+        var combined = Text(verbatim: "")
+        var pendingPlainRuns: [MarkdownInlineRun] = []
+
+        func flushPending() {
+            guard !pendingPlainRuns.isEmpty else { return }
+            let attr = MarkdownAttributedStringBuilder.build(
+                from: pendingPlainRuns,
+                fontSize: fontSize,
+                baseWeight: baseWeight,
+                colorScheme: colorScheme
+            )
+            combined = Text("\(combined)\(Text(attr))")
+            pendingPlainRuns.removeAll(keepingCapacity: true)
+        }
+
+        for run in runs {
+            if run.kind == .inlineMath,
+               let entry = MathRenderCache.shared.renderInline(
+                   latex: run.text,
+                   fontSize: fontSize + 0.5,
+                   isDark: isDark
+               ) {
+                flushPending()
+                let mathSegment = Text(Image(nsImage: entry.image))
+                    .baselineOffset(-entry.descent)
+                combined = Text("\(combined)\(mathSegment)")
+            } else {
+                pendingPlainRuns.append(run)
+            }
+        }
+        flushPending()
+        return combined
     }
 }

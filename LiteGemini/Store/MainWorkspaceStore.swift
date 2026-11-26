@@ -25,10 +25,39 @@ final class MainWorkspaceStore: ObservableObject {
     /// Currently selected conversation ID in the main workspace, or `nil` for a new chat.
     @Published private(set) var activeConversationId: String?
 
+    // MARK: - v2.2 Hybrid Search (`⌘K`) State
+
+    /// Whether the centered `⌘K` conversation search command palette is presented.
+    @Published var isSearchModalPresented: Bool = false {
+        didSet {
+            if isSearchModalPresented {
+                if !oldValue {
+                    performHybridSearch(for: searchQuery)
+                }
+            } else if oldValue {
+                cancelPendingCloudSearch()
+            }
+        }
+    }
+    /// Current query text inside the `⌘K` conversation search palette.
+    @Published var searchQuery: String = "" {
+        didSet {
+            if searchQuery != oldValue || isSearchModalPresented {
+                performHybridSearch(for: searchQuery)
+            }
+        }
+    }
+    /// Unified instant local + debounced cloud semantic results shown in the `⌘K` modal.
+    @Published private(set) var searchResults: [ConversationSearchItem] = []
+    /// Whether a debounced `SearchChatsPageQuery` remote search is currently in flight.
+    @Published private(set) var isSearchingCloud: Bool = false
+
     // MARK: - Composed Dependencies
 
     /// Reusable single-conversation state machine driving the main chat surface.
     let session: ChatSessionStore
+    /// Isolated ephemeral `Btw` side-question state machine.
+    let btwStore: BtwSessionStore
     /// Account-scoped read-only SWR snapshot cache.
     let cache: SWRConversationCache
     /// Transport bridge backing this workspace.
@@ -58,6 +87,13 @@ final class MainWorkspaceStore: ObservableObject {
     private var lastResignedAt: Date?
     private var activeSyncGeneration: UInt64 = 0
     private var activeSyncTask: Task<Void, Never>?
+    private var searchGeneration: UInt64 = 0
+    private var cloudSearchTask: Task<Void, Never>?
+
+    @MainActor
+    private final class WeakWorkspaceBox {
+        weak var workspace: MainWorkspaceStore?
+    }
 
     // MARK: - Initialization
 
@@ -65,6 +101,8 @@ final class MainWorkspaceStore: ObservableObject {
         transport: any ChatTransport,
         cache: SWRConversationCache = SWRConversationCache(),
         session: ChatSessionStore? = nil,
+        btwTransportFactory: (@MainActor () -> any ChatTransport)? = nil,
+        onTearDownBtwTransport: (@MainActor (any ChatTransport) -> Void)? = nil,
         backgroundTimeoutSeconds: @escaping () -> TimeInterval? = { 600 },
         defaultTemporaryChat: @escaping () -> Bool = { false },
         clearDataNotificationName: Notification.Name = SWRConversationCache.defaultClearDataNotificationName,
@@ -79,16 +117,33 @@ final class MainWorkspaceStore: ObservableObject {
         self.notificationCenter = notificationCenter
         self.now = now
 
+        let resolvedSession: ChatSessionStore
         if let session {
-            self.session = session
+            resolvedSession = session
         } else {
-            self.session = ChatSessionStore(
+            resolvedSession = ChatSessionStore(
                 transport: transport,
                 cache: cache,
                 initialTemporaryChat: defaultTemporaryChat(),
                 attachToTransportEvents: false
             )
         }
+        resolvedSession.autoOpenNativeArtifacts = true
+        self.session = resolvedSession
+
+        let weakBox = WeakWorkspaceBox()
+        let resolvedBtwFactory: () -> any ChatTransport = btwTransportFactory ?? { NoopChatTransport() }
+        self.btwStore = BtwSessionStore(
+            makeEphemeralTransport: resolvedBtwFactory,
+            onTearDownTransport: onTearDownBtwTransport,
+            authUserIndexProvider: { [weak weakBox] in
+                weakBox?.workspace?.activeAuthUserIndex
+            },
+            modelIdProvider: { [weak resolvedSession] in
+                resolvedSession?.selectedModelId
+            }
+        )
+        weakBox.workspace = self
 
         self.transport.onEvent = { [weak self] event in
             self?.handleTransportEvent(event)
@@ -96,6 +151,18 @@ final class MainWorkspaceStore: ObservableObject {
 
         self.session.onConversationCompleted = { [weak self] snapshot in
             self?.handleConversationCompleted(snapshot)
+        }
+
+        self.session.onTriggerBtwSlashCommand = { [weak self] question, quotes in
+            self?.handleBtwSlashCommand(question: question, stagedQuotes: quotes)
+        }
+
+        self.session.onBranchedConversationCreated = { [weak self] newConversationId in
+            guard let self else {
+                return
+            }
+            await self.selectConversation(id: newConversationId)
+            await self.refreshRecentConversations()
         }
 
         self.clearDataObserver = notificationCenter.addObserver(
@@ -119,6 +186,7 @@ final class MainWorkspaceStore: ObservableObject {
 
     isolated deinit {
         activeSyncTask?.cancel()
+        cloudSearchTask?.cancel()
         if let clearDataObserver {
             notificationCenter.removeObserver(clearDataObserver)
         }
@@ -235,6 +303,8 @@ final class MainWorkspaceStore: ObservableObject {
 
             let useTemporary = defaultTemporaryChat()
             activeConversationId = nil
+            btwStore.clear()
+            btwStore.close()
             session.resetToEmptyState(temporary: useTemporary)
 
             if let account = activeAccount {
@@ -267,6 +337,8 @@ final class MainWorkspaceStore: ObservableObject {
             return
         }
 
+        session.speechController.stop()
+
         if session.isStreaming {
             await session.stop()
         }
@@ -279,6 +351,10 @@ final class MainWorkspaceStore: ObservableObject {
         let scopeId = activeAccount?.scopeId
         let authUser = activeAuthUserIndex
 
+        if activeConversationId != id {
+            btwStore.clear()
+            btwStore.close()
+        }
         activeConversationId = id
 
         if let cached = cache.loadConversation(accountScopeId: scopeId, conversationId: id, accessedAt: now()) {
@@ -365,6 +441,8 @@ final class MainWorkspaceStore: ObservableObject {
 
         let useTemporary = temporary ?? defaultTemporaryChat()
         activeConversationId = nil
+        btwStore.clear()
+        btwStore.close()
 
         if !useTemporary {
             cache.saveLastActiveConversationId(
@@ -376,6 +454,253 @@ final class MainWorkspaceStore: ObservableObject {
         }
 
         await session.startNewChat(temporary: useTemporary, authUser: activeAuthUserIndex)
+    }
+
+    /// Adopts a Quick Mode conversation into the Main Window and immediately opens `artifact`
+    /// inside the Main Window's right-hand Canvas / Report Split Pane.
+    func openQuickModeArtifact(
+        from quickStore: ChatSessionStore,
+        artifact: ArtifactCardInfo
+    ) async {
+        let convId = quickStore.conversationId
+        let isTemp = quickStore.isTemporaryChat
+        let copiedTurns = quickStore.turns
+        let copiedTitle = quickStore.title
+
+        if session.isStreaming {
+            await session.stop()
+        }
+
+        activeSyncGeneration &+= 1
+        activeSyncTask?.cancel()
+        activeSyncTask = nil
+
+        activeConversationId = isTemp ? nil : convId
+        session.adoptExternalSession(
+            conversationId: convId,
+            title: copiedTitle,
+            turns: copiedTurns,
+            isTemporary: isTemp,
+            selectedArtifact: artifact
+        )
+
+        if !isTemp, let convId, !convId.isEmpty, let account = activeAccount {
+            scheduleBackgroundRevalidation(conversationId: convId, account: account)
+        }
+    }
+
+    // MARK: - v2.2 Hybrid Search (`⌘K`) & Btw Side Panel Actions
+
+    /// Presents the `⌘K` conversation search palette seeded immediately with recent conversations.
+    func openSearchModal() {
+        searchQuery = ""
+        isSearchModalPresented = true
+        performHybridSearch(for: "")
+    }
+
+    /// Dismisses the `⌘K` conversation search palette and cancels any in-flight cloud query.
+    func dismissSearchModal() {
+        isSearchModalPresented = false
+        cancelPendingCloudSearch()
+    }
+
+    /// Toggles visibility of the `⌘K` conversation search palette.
+    func toggleSearchModal() {
+        if isSearchModalPresented {
+            dismissSearchModal()
+        } else {
+            openSearchModal()
+        }
+    }
+
+    /// Selects a hit from the `⌘K` search modal, dismisses the overlay, and loads the conversation.
+    func selectSearchResult(_ item: ConversationSearchItem) async {
+        dismissSearchModal()
+        await selectConversation(id: item.conversationId)
+    }
+
+    /// Stages highlighted assistant response text as a structured quote in the main composer.
+    @discardableResult
+    func stageQuotedText(_ text: String, turnId: String? = nil) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTurnId = turnId ?? session.turns.last(where: {
+            !trimmed.isEmpty && $0.assistantMarkdown.localizedStandardContains(trimmed)
+        })?.id
+        let passage = QuotedPassage(
+            quotedText: text,
+            conversationId: session.conversationId,
+            turnId: resolvedTurnId
+        )
+        return session.draft.addQuote(passage)
+    }
+
+    /// Opens the `Btw` ephemeral side panel, optionally pre-staging highlighted text.
+    func openBtwPanel(withQuotedText quotedText: String? = nil, turnId: String? = nil) {
+        let quote: BtwQuoteItem? = {
+            guard let raw = quotedText?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !raw.isEmpty else {
+                return nil
+            }
+            let resolvedTurnId = turnId ?? session.turns.last(where: {
+                $0.assistantMarkdown.localizedStandardContains(raw)
+            })?.id
+            return BtwQuoteItem(
+                quotedText: raw,
+                conversationId: session.conversationId,
+                turnId: resolvedTurnId
+            )
+        }()
+        btwStore.open(with: quote, initialQuestion: nil, mainTurns: session.turns)
+    }
+
+    /// Appends formatted `Notes from Btw:\n...` summary lines into the main composer draft.
+    func appendBtwNotesToComposer(_ notes: String) {
+        let formatted = BtwPromptBuilder.formatNotesForMainChat(notes)
+        guard !formatted.isEmpty else {
+            return
+        }
+        let existing = session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if existing.isEmpty {
+            session.draft.text = formatted
+        } else {
+            session.draft.text = "\(session.draft.text.trimmingCharacters(in: .whitespacesAndNewlines))\n\n\(formatted)"
+        }
+    }
+
+    private func handleBtwSlashCommand(question: String, stagedQuotes: [QuotedPassage]) {
+        for quote in stagedQuotes {
+            btwStore.stageQuote(
+                BtwQuoteItem(
+                    id: quote.id,
+                    quotedText: quote.quotedText,
+                    conversationId: quote.conversationId,
+                    turnId: quote.turnId
+                )
+            )
+        }
+        btwStore.open(
+            with: nil,
+            initialQuestion: question.isEmpty ? nil : question,
+            mainTurns: session.turns
+        )
+    }
+
+    private func performHybridSearch(for rawQuery: String) {
+        cancelPendingCloudSearch()
+        searchGeneration &+= 1
+        let generation = searchGeneration
+
+        let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            isSearchingCloud = false
+            searchResults = recentConversations.map(ConversationSearchItem.init(summary:))
+            return
+        }
+
+        // Tier 1: 0ms synchronous local cache + in-memory recent title search.
+        let cachedMatches = cache.searchConversations(
+            accountScopeId: activeAccount?.scopeId,
+            query: trimmed,
+            limit: 20
+        )
+        var localItems = cachedMatches.map(ConversationSearchItem.init(cachedMatch:))
+        var seenIds = Set(localItems.map(\.conversationId))
+
+        for summary in recentConversations where !seenIds.contains(summary.id) {
+            if summary.title.range(of: trimmed, options: .caseInsensitive) != nil {
+                localItems.append(ConversationSearchItem(summary: summary))
+                seenIds.insert(summary.id)
+            }
+        }
+        searchResults = localItems
+
+        guard authState.isSignedIn else {
+            isSearchingCloud = false
+            return
+        }
+
+        // Tier 2: 200ms debounced cloud semantic search (`SearchChatsPageQuery`).
+        isSearchingCloud = true
+        let snapshotLocalItems = localItems
+        cloudSearchTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(200))
+            } catch {
+                return
+            }
+
+            guard let self, !Task.isCancelled, self.searchGeneration == generation else {
+                return
+            }
+
+            let cloudHits = await self.session.transport.searchRemoteConversations(query: trimmed, limit: 20)
+            guard !Task.isCancelled, self.searchGeneration == generation else {
+                return
+            }
+
+            self.searchResults = Self.mergeSearchResults(
+                localItems: snapshotLocalItems,
+                cloudHits: cloudHits
+            )
+            self.isSearchingCloud = false
+            self.cloudSearchTask = nil
+        }
+    }
+
+    private func cancelPendingCloudSearch() {
+        searchGeneration &+= 1
+        cloudSearchTask?.cancel()
+        cloudSearchTask = nil
+        isSearchingCloud = false
+    }
+
+    private nonisolated static func mergeSearchResults(
+        localItems: [ConversationSearchItem],
+        cloudHits: [ConversationSearchHit]
+    ) -> [ConversationSearchItem] {
+        var merged = localItems
+        var indexByConversationId: [String: Int] = [:]
+        indexByConversationId.reserveCapacity(localItems.count)
+
+        func canonicalLookupKey(_ rawId: String) -> String {
+            rawId.hasPrefix("c_") ? String(rawId.dropFirst(2)) : rawId
+        }
+
+        for (index, item) in merged.enumerated() {
+            indexByConversationId[canonicalLookupKey(item.conversationId)] = index
+        }
+
+        for hit in cloudHits {
+            let lookupKey = canonicalLookupKey(hit.conversationId)
+            if let existingIndex = indexByConversationId[lookupKey] {
+                let existing = merged[existingIndex]
+                let existingSnippetEmpty = existing.snippet?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+                if existingSnippetEmpty, let cloudSnippet = hit.snippet, !cloudSnippet.isEmpty {
+                    merged[existingIndex] = ConversationSearchItem(
+                        id: existing.id,
+                        conversationId: existing.conversationId,
+                        title: existing.title,
+                        snippet: cloudSnippet,
+                        updatedAt: max(existing.updatedAt, hit.updatedAt ?? .distantPast),
+                        isCloudMatch: false
+                    )
+                }
+            } else {
+                indexByConversationId[lookupKey] = merged.count
+                merged.append(
+                    ConversationSearchItem(
+                        id: hit.id,
+                        conversationId: hit.conversationId,
+                        title: hit.title,
+                        snippet: hit.snippet,
+                        updatedAt: hit.updatedAt ?? .distantPast,
+                        isCloudMatch: true
+                    )
+                )
+            }
+        }
+
+        return merged
     }
 
     // MARK: - Multi-Account Switching
@@ -393,6 +718,9 @@ final class MainWorkspaceStore: ObservableObject {
         activeSyncTask = nil
 
         // Swap scope and cached recent list immediately so accounts never bleed into each other.
+        btwStore.clear()
+        btwStore.close()
+        dismissSearchModal()
         let available = authState.availableAccounts.isEmpty ? [target] : authState.availableAccounts
         authState = .signedIn(active: target, available: available)
         session.updateAccountScope(target.scopeId)
@@ -551,6 +879,10 @@ final class MainWorkspaceStore: ObservableObject {
         authState = .signedOut
         recentConversations = []
         activeConversationId = nil
+        btwStore.clear()
+        btwStore.close()
+        dismissSearchModal()
+        searchResults = []
         session.updateAccountScope(nil)
         session.resetToEmptyState(temporary: false)
     }
