@@ -78,44 +78,6 @@ struct SplashView: View {
     }
 }
 
-/// Pure vector four-point concave star shape
-struct MonochromeSparkShape: Shape {
-    nonisolated func path(in rect: CGRect) -> Path {
-        let w = rect.width
-        let h = rect.height
-        let cx = rect.midX
-        let cy = rect.midY
-        // Control point offset from center determines the concavity of the star arms
-        let k: CGFloat = min(w, h) * 0.08
-
-        var path = Path()
-        // Top tip
-        path.move(to: CGPoint(x: cx, y: rect.minY))
-        // Curve to right tip
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX, y: cy),
-            control: CGPoint(x: cx + k, y: cy - k)
-        )
-        // Curve to bottom tip
-        path.addQuadCurve(
-            to: CGPoint(x: cx, y: rect.maxY),
-            control: CGPoint(x: cx + k, y: cy + k)
-        )
-        // Curve to left tip
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX, y: cy),
-            control: CGPoint(x: cx - k, y: cy + k)
-        )
-        // Curve back to top tip
-        path.addQuadCurve(
-            to: CGPoint(x: cx, y: rect.minY),
-            control: CGPoint(x: cx - k, y: cy - k)
-        )
-        path.closeSubpath()
-        return path
-    }
-}
-
 #Preview {
     SplashView(isLoading: true)
         .frame(width: 800, height: 600)

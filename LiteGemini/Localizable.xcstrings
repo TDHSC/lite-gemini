@@ -131,6 +131,16 @@
         }
       }
     },
+    "Classic Web Mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "经典网页模式"
+          }
+        }
+      }
+    },
     "Clear" : {
       "localizations" : {
         "zh-Hans" : {
@@ -237,6 +247,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "编辑"
+          }
+        }
+      }
+    },
+    "Enable Native UI (Experimental)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用原生界面（实验性）"
           }
         }
       }
@@ -351,6 +371,16 @@
         }
       }
     },
+    "Native Liquid Glass" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原生 Liquid Glass"
+          }
+        }
+      }
+    },
     "Never" : {
       "localizations" : {
         "zh-Hans" : {
@@ -397,6 +427,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按下组合键…"
+          }
+        }
+      }
+    },
+    "Preview of the native Liquid Glass interface. Switch back to Classic Web Mode anytime from the View menu (⌘⇧M)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原生 Liquid Glass 界面预览。你可以随时在“显示”菜单 (⌘⇧M) 中切回经典网页模式。"
           }
         }
       }
@@ -501,6 +541,16 @@
         }
       }
     },
+    "Switch to Classic Web Mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换到经典网页模式"
+          }
+        }
+      }
+    },
     "System Default" : {
       "localizations" : {
         "zh-Hans" : {
@@ -533,6 +583,16 @@
     },
     "User-Agent" : {
 
+    },
+    "Uses the native Liquid Glass interface. Switch between Native Liquid Glass and Classic Web Mode anytime from the View menu (⌘⇧M)." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用原生 Liquid Glass 界面。你可以随时在“显示”菜单 (⌘⇧M) 中切换原生 Liquid Glass 与经典网页模式。"
+          }
+        }
+      }
     },
     "Version" : {
       "localizations" : {

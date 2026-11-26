@@ -2,7 +2,7 @@ import SwiftUI
 import WebKit
 
 struct GeminiWebView: NSViewRepresentable {
-    @ObservedObject var viewModel: WebViewModel
+    @ObservedObject var viewModel: ClassicWebViewModel
 
     func makeNSView(context: Context) -> WKWebView {
         return viewModel.webView

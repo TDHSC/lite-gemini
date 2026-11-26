@@ -5,7 +5,7 @@ import Sparkle
 @main
 struct LiteGeminiApp: App {
     // Use StateObject to persist the lifecycle even when the window is closed
-    @StateObject private var webViewModel = WebViewModel()
+    @StateObject private var webViewModel = ClassicWebViewModel()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
@@ -36,9 +36,11 @@ struct LiteGeminiApp: App {
                 }
                 .keyboardShortcut("w", modifiers: .command)
             }
-            // Global Cmd+R to reload, Cmd+[ / Cmd+] for navigation, added to the system
-            // View menu (CommandMenu("View") would create a second View menu)
+            // Interface mode switch (when enabled), Cmd+R to reload, Cmd+[ / Cmd+] for
+            // navigation, added to the system View menu (CommandMenu("View") would create a second View menu)
             CommandGroup(before: .toolbar) {
+                InterfaceModeCommands()
+
                 Button("Reload Page") {
                     webViewModel.webView.reload()
                 }
@@ -63,6 +65,39 @@ struct LiteGeminiApp: App {
         // Standard macOS settings window, opened with Cmd+,
         Settings {
             SettingsView(updater: appDelegate.updaterController.updater)
+        }
+    }
+}
+
+/// View-menu items for switching between Native Liquid Glass and Classic Web Mode (⌘⇧M)
+private struct InterfaceModeCommands: View {
+    @ObservedObject private var settings = SettingsManager.shared
+
+    var body: some View {
+        if settings.enableNativeUI {
+            if settings.interfaceMode == .native {
+                Toggle("Native Liquid Glass", isOn: Binding(
+                    get: { true },
+                    set: { _ in settings.interfaceMode = .native }
+                ))
+                Toggle("Classic Web Mode", isOn: Binding(
+                    get: { false },
+                    set: { _ in settings.interfaceMode = .web }
+                ))
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+            } else {
+                Toggle("Native Liquid Glass", isOn: Binding(
+                    get: { false },
+                    set: { _ in settings.interfaceMode = .native }
+                ))
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+                Toggle("Classic Web Mode", isOn: Binding(
+                    get: { true },
+                    set: { _ in settings.interfaceMode = .web }
+                ))
+            }
+
+            Divider()
         }
     }
 }

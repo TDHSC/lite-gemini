@@ -179,6 +179,14 @@ enum BackgroundTimeoutPreset: String, CaseIterable, Identifiable {
     }
 }
 
+/// Active interface presentation mode when `enableNativeUI` is enabled
+nonisolated enum InterfaceMode: String, CaseIterable, Codable, Sendable, Identifiable {
+    case native
+    case web
+
+    var id: String { rawValue }
+}
+
 /// App settings manager using UserDefaults + @Published for persistence and reactive binding.
 /// All configurable parameters are centrally managed and referenced by other modules.
 class SettingsManager: ObservableObject {
@@ -200,6 +208,8 @@ class SettingsManager: ObservableObject {
         static let newChatHotKey: CustomHotKey? = CustomHotKey.newChatDefaultHotKey
         static let windowAnimation = true
         static let defaultTemporaryChat = false
+        static let enableNativeUI = false
+        static let interfaceMode = InterfaceMode.native
     }
 
     // MARK: - Storage Keys
@@ -216,6 +226,8 @@ class SettingsManager: ObservableObject {
         static let windowAnimation = "windowAnimation"
         static let defaultTemporaryChat = "defaultTemporaryChat"
         static let keepRunningInBackground = "keepRunningInBackground"
+        static let enableNativeUI = "enableNativeUI"
+        static let interfaceMode = "interfaceMode"
     }
 
     // MARK: - Configurable Properties
@@ -305,9 +317,22 @@ class SettingsManager: ObservableObject {
         didSet { UserDefaults.standard.set(keepRunningInBackground, forKey: Keys.keepRunningInBackground) }
     }
 
+    /// Experimental feature flag enabling the v2 native Liquid Glass interface
+    @Published var enableNativeUI: Bool {
+        didSet { UserDefaults.standard.set(enableNativeUI, forKey: Keys.enableNativeUI) }
+    }
+
+    /// Active interface presentation mode when `enableNativeUI` is enabled
+    @Published var interfaceMode: InterfaceMode {
+        didSet { UserDefaults.standard.set(interfaceMode.rawValue, forKey: Keys.interfaceMode) }
+    }
+
     // MARK: - Computed Properties
 
-
+    /// Whether the app should currently present the native Liquid Glass interface
+    var isNativeUIActive: Bool {
+        enableNativeUI && interfaceMode == .native
+    }
 
     /// Default User-Agent value
     var defaultUserAgent: String {
@@ -392,6 +417,20 @@ class SettingsManager: ObservableObject {
             self.defaultTemporaryChat = defaults.bool(forKey: Keys.defaultTemporaryChat)
         } else {
             self.defaultTemporaryChat = Defaults.defaultTemporaryChat
+        }
+
+        // enableNativeUI defaults to false until v2.0 acceptance
+        if defaults.object(forKey: Keys.enableNativeUI) != nil {
+            self.enableNativeUI = defaults.bool(forKey: Keys.enableNativeUI)
+        } else {
+            self.enableNativeUI = Defaults.enableNativeUI
+        }
+
+        if let modeRaw = defaults.string(forKey: Keys.interfaceMode),
+           let mode = InterfaceMode(rawValue: modeRaw) {
+            self.interfaceMode = mode
+        } else {
+            self.interfaceMode = Defaults.interfaceMode
         }
     }
 

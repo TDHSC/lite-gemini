@@ -176,6 +176,16 @@ struct SettingsView: View {
     private var advancedTab: some View {
         Form {
             Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Enable Native UI (Experimental)", isOn: $settings.enableNativeUI)
+                    Text("Uses the native Liquid Glass interface. Switch between Native Liquid Glass and Classic Web Mode anytime from the View menu (⌘⇧M).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Section {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("User-Agent")

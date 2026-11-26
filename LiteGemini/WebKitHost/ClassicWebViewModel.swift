@@ -1,7 +1,6 @@
 import SwiftUI
 import WebKit
 import Combine
-import os
 
 extension Notification.Name {
     /// Posted after browsing data has been cleared from Settings
@@ -9,6 +8,9 @@ extension Notification.Name {
     /// Posted by the global new-chat hotkey once the window is visible and focused
     static let newChatRequested = Notification.Name("NewChatRequested")
 }
+
+/// Convenience alias preserving compatibility with legacy `WebViewModel` references.
+typealias WebViewModel = ClassicWebViewModel
 
 /// Weak wrapper to avoid retain cycle: WKUserContentController strongly retains message handlers
 private class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
@@ -23,7 +25,9 @@ private class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
-class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+/// View model managing the Classic `WKWebView` session, navigation delegates, downloads,
+/// popups, IME workarounds, and theme synchronization.
+class ClassicWebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
 
     // MARK: - Constants
 
@@ -31,186 +35,11 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         static let geminiURL = URL(string: "https://gemini.google.com/app")!
     }
 
-    /// Logs new-window requests so misrouted popup flows can be diagnosed from real
-    /// signed-in sessions, which cannot be reproduced headlessly. Query strings and
-    /// fragments are never logged; they can contain tokens and email addresses.
-    private static let newWindowLogger = Logger(subsystem: "io.github.tdhsc.LiteGemini", category: "NewWindow")
-
     /// Settings manager reference
     private let settings = SettingsManager.shared
 
     /// Subscriptions for observing settings changes
     private var cancellables = Set<AnyCancellable>()
-
-    /// Console log bridge — forwards JS console.log to native Xcode console
-    private static let consoleLogBridgeScript = """
-    (function() {
-        if (window.__consoleBridgeInstalled) return;
-        window.__consoleBridgeInstalled = true;
-        var originalLog = console.log;
-        console.log = function() {
-            var args = Array.prototype.slice.call(arguments);
-            var msg = args.map(function(a) {
-                return typeof a === 'object' ? JSON.stringify(a) : String(a);
-            }).join(' ');
-            originalLog.apply(console, arguments);
-            try {
-                window.webkit.messageHandlers.consoleLog.postMessage(msg);
-            } catch(e) {}
-        };
-    })();
-    """
-
-    /// Observes the Gemini page's computed background color so the native titlebar and
-    /// window backdrop blend seamlessly in both dark (#131314) and light (#FFFFFF) themes.
-    private static let themeSyncScript = """
-    (function() {
-        if (window.__themeSyncInstalled) return;
-        window.__themeSyncInstalled = true;
-        var lastColor = '';
-        function reportBg() {
-            var body = document.body;
-            var docEl = document.documentElement;
-            if (!body && !docEl) return;
-            var bg = body ? window.getComputedStyle(body).backgroundColor : '';
-            if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') {
-                bg = docEl ? window.getComputedStyle(docEl).backgroundColor : '';
-            }
-            if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg !== lastColor) {
-                lastColor = bg;
-                try {
-                    window.webkit.messageHandlers.themeColor.postMessage(bg);
-                } catch(e) {}
-            }
-        }
-        document.addEventListener('DOMContentLoaded', function() {
-            reportBg();
-            var observer = new MutationObserver(reportBg);
-            if (document.documentElement) {
-                observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
-            }
-            if (document.body) {
-                observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
-            }
-        });
-        window.addEventListener('load', reportBg);
-        setInterval(reportBg, 1500);
-    })();
-    """
-
-    /// IME fix script — injected at document start to register before any page scripts.
-    /// Tracks real composing state and blocks buggy Enter events from reaching the page.
-    private static let imeFixScript = """
-    (function() {
-        if (window.__imeFixInstalled) return;
-        window.__imeFixInstalled = true;
-
-        var actuallyComposing = false;
-        var fixInProgress = false;
-        var syntheticKeyTimer = null;
-
-        document.addEventListener('compositionstart', function(e) {
-            actuallyComposing = true;
-            console.log('[IME Debug] compositionstart, data="' + e.data + '"');
-        }, true);
-
-        document.addEventListener('compositionend', function(e) {
-            actuallyComposing = false;
-            console.log('[IME Debug] compositionend, data="' + e.data + '"');
-
-            // FIX for Gemini's "recent composition" flag:
-            // Gemini internally tracks composition state and swallows the first
-            // Enter after compositionend. Its keydown handler clears that flag on
-            // ANY keydown. We dispatch a synthetic Shift key to clear that flag,
-            // so the user's next real Enter goes through normally on the first
-            // press.
-            //
-            // A synthetic Enter must NEVER be used here. Shift can never submit
-            // in any Gemini path, but an Enter submits whenever Gemini's swallow
-            // flag is not armed — observed when the composer has attachments,
-            // where it sent the prompt immediately.
-            //
-            // HOWEVER, if an Enter keydown arrives within 50ms of compositionend,
-            // it means the Enter key was used to confirm the IME candidate
-            // (scenario 1). In that case, we must NOT dispatch a synthetic key,
-            // because Gemini's flag-clearing on that Enter is the correct behavior.
-            if (syntheticKeyTimer) clearTimeout(syntheticKeyTimer);
-            syntheticKeyTimer = setTimeout(function() {
-                syntheticKeyTimer = null;
-                var target = document.activeElement || document.body;
-                console.log('[IME Debug] >>> dispatching synthetic Shift to clear Gemini flag');
-                var synDown = new KeyboardEvent('keydown', {
-                    key: 'Shift', code: 'ShiftLeft', keyCode: 16, which: 16,
-                    bubbles: true, cancelable: true, shiftKey: true
-                });
-                target.dispatchEvent(synDown);
-                var synUp = new KeyboardEvent('keyup', {
-                    key: 'Shift', code: 'ShiftLeft', keyCode: 16, which: 16,
-                    bubbles: true, cancelable: true
-                });
-                target.dispatchEvent(synUp);
-                console.log('[IME Debug] >>> synthetic Shift dispatched, defaultPrevented=' + synDown.defaultPrevented);
-            }, 50);
-        }, true);
-
-        // Capture-phase keydown logging + fix
-        document.addEventListener('keydown', function(e) {
-            if (e.key !== 'Enter' || e.shiftKey) return;
-
-            // If a real Enter arrives right after compositionend (within 50ms),
-            // cancel the synthetic — this Enter IS the IME confirmation key
-            if (syntheticKeyTimer && e.isTrusted) {
-                clearTimeout(syntheticKeyTimer);
-                syntheticKeyTimer = null;
-                console.log('[IME Debug] keydown Enter: cancelled synthetic (IME confirmation Enter detected)');
-            }
-
-            console.log('[IME Debug] keydown Enter: isComposing=' + e.isComposing +
-                ', actuallyComposing=' + actuallyComposing +
-                ', fixInProgress=' + fixInProgress +
-                ', isTrusted=' + e.isTrusted);
-
-            // Original fix: WKWebView sometimes reports isComposing=true even
-            // after compositionend has fired. Block this buggy event and ask
-            // native to send a fresh Enter.
-            if (e.isComposing && !actuallyComposing && !fixInProgress) {
-                console.log('[IME Debug] >>> isComposing FIX: blocking buggy Enter, requesting native re-send');
-                e.stopImmediatePropagation();
-                e.preventDefault();
-                fixInProgress = true;
-                setTimeout(function() { fixInProgress = false; }, 1000);
-                window.webkit.messageHandlers.imeEnterFix.postMessage('sendEnter');
-                return;
-            }
-
-            if (fixInProgress) {
-                console.log('[IME Debug] --- re-sent fix Enter, letting through');
-            } else {
-                console.log('[IME Debug] --- normal Enter, letting through');
-            }
-        }, true);
-
-        // Bubble-phase: check if page preventDefault'd
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                console.log('[IME Debug] keydown Enter (BUBBLE): defaultPrevented=' + e.defaultPrevented);
-            }
-        }, false);
-
-        // Post-Enter state check
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                setTimeout(function() {
-                    var el = document.activeElement;
-                    var textLen = el ? (el.textContent || '').length : 0;
-                    console.log('[IME Debug] post-Enter: textLen=' + textLen);
-                }, 50);
-            }
-        }, true);
-
-        console.log('[IME Debug] IME fix script installed with debug logging');
-    })();
-    """
 
     // MARK: - Public Properties
 
@@ -229,7 +58,10 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     let webView: WKWebView
 
     /// Owns the web view's downloads; kept here because WKDownload's delegate is weak
-    let downloadManager = DownloadManager()
+    let downloadManager: DownloadManager
+
+    /// Shared coordinator owning open in-app sign-in and OAuth popup windows
+    let popupCoordinator: PopupCoordinator
 
     /// Turns on Gemini's temporary chat for new chats when the setting is enabled
     private var temporaryChatController: TemporaryChatController!
@@ -243,10 +75,6 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     /// Fallback task that loads the homepage when the new-chat shortcut had no effect
     private var newChatFallbackTask: Task<Void, Never>?
 
-    /// Open popup windows owned by this view model (sign-in, OAuth); they remove
-    /// themselves through `onClose`
-    private var popups: [PopupWindowController] = []
-
     /// Check if currently on the Gemini homepage
     private var isOnHomePage: Bool {
         guard let url = webView.url else { return false }
@@ -256,23 +84,31 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
     // MARK: - Initialization
 
-    override init() {
+    init(
+        popupCoordinator: PopupCoordinator = PopupCoordinator(),
+        downloadManager: DownloadManager = DownloadManager()
+    ) {
+        self.popupCoordinator = popupCoordinator
+        self.downloadManager = downloadManager
+
         let configuration = WKWebViewConfiguration()
         // Use default persistent data store to preserve cookies / LocalStorage across app restarts
         configuration.websiteDataStore = WKWebsiteDataStore.default()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
 
+        #if DEBUG
         // Inject console log bridge first so it captures all subsequent console.log calls
         let consoleScript = WKUserScript(
-            source: Self.consoleLogBridgeScript,
+            source: ClassicWebScripts.consoleLogBridgeScript,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
         )
         configuration.userContentController.addUserScript(consoleScript)
+        #endif
 
         // Inject IME fix script via WKUserScript, more reliable than evaluateJavaScript
         let imeScript = WKUserScript(
-            source: Self.imeFixScript,
+            source: ClassicWebScripts.imeFixScript,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
         )
@@ -286,7 +122,7 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         configuration.userContentController.addUserScript(tempChatIntentScript)
 
         let themeScript = WKUserScript(
-            source: Self.themeSyncScript,
+            source: ClassicWebScripts.themeSyncScript,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         )
@@ -303,7 +139,9 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         // Register message handlers (must be after super.init() so self is available)
         let weakHandler = WeakScriptMessageHandler(self)
         webView.configuration.userContentController.add(weakHandler, name: "imeEnterFix")
+        #if DEBUG
         webView.configuration.userContentController.add(weakHandler, name: "consoleLog")
+        #endif
         webView.configuration.userContentController.add(weakHandler, name: "temporaryChatIntent")
         webView.configuration.userContentController.add(weakHandler, name: "themeColor")
 
@@ -385,9 +223,11 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
         inputReadyTask?.cancel()
         newChatFallbackTask?.cancel()
         temporaryChatController.cancel()
-        closeAllPopups()
+        popupCoordinator.closeAll()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "imeEnterFix")
+        #if DEBUG
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "consoleLog")
+        #endif
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "temporaryChatIntent")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "themeColor")
         NotificationCenter.default.removeObserver(self)
@@ -425,17 +265,8 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
     /// Reload the homepage after browsing data has been cleared
     @objc private func handleBrowsingDataCleared() {
-        closeAllPopups()
+        popupCoordinator.closeAll()
         webView.load(URLRequest(url: Constants.geminiURL))
-    }
-
-    /// Close every popup window; the array is copied first because closing mutates it
-    /// through `onClose`
-    private func closeAllPopups() {
-        let controllers = popups
-        for controller in controllers {
-            controller.close()
-        }
     }
 
     /// Handle the global new-chat hotkey: send Cmd+Shift+O to the page, and fall back to
@@ -616,91 +447,20 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
 
     // MARK: - WKUIDelegate
 
-    /// Route a new-window request: Gemini URLs load in the main view, Google sign-in and
-    /// OAuth open in an in-app popup, everything else goes to the default browser.
-    /// The `webView` parameter is the requesting view and may be a popup's web view in
-    /// nested calls; all main-view loads go to `self.webView`.
+    /// Route a new-window request through `PopupCoordinator`.
     func webView(_ webView: WKWebView,
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
-        let targetURL = navigationAction.request.url
-        let isLinkActivated = navigationAction.navigationType == .linkActivated
-        let hasExplicitSize = windowFeatures.width != nil || windowFeatures.height != nil
-        let route = NewWindowRouter.route(url: targetURL, isLinkActivated: isLinkActivated, hasExplicitSize: hasExplicitSize)
-
-        // One `.notice` entry shows both the request and the decision; lower levels are
-        // not persisted, and the logs are read after the session.
-        Self.newWindowLogger.notice("""
-        new-window: scheme=\(targetURL?.scheme ?? "nil", privacy: .public) \
-        host=\(targetURL?.host ?? "nil", privacy: .public) \
-        path=\(targetURL?.path ?? "nil", privacy: .public) \
-        type=\(Self.navigationTypeName(navigationAction.navigationType), privacy: .public) \
-        size=\(Self.windowSizeDescription(windowFeatures), privacy: .public) \
-        source=\(navigationAction.sourceFrame.securityOrigin.host, privacy: .public) \
-        mainFrame=\(navigationAction.sourceFrame.isMainFrame, privacy: .public) \
-        route=\(Self.routeName(route), privacy: .public)
-        """)
-
-        switch route {
-        case .mainWebView(let url):
-            self.webView.load(URLRequest(url: url))
-            return nil
-        case .externalBrowser(let url):
-            NSWorkspace.shared.open(url)
-            return nil
-        case .ignore:
-            return nil
-        case .popup:
-            let controller = PopupWindowController(
-                configuration: configuration,
-                navigationAction: navigationAction,
-                windowFeatures: windowFeatures,
-                parentWindow: self.webView.window,
-                openInMain: { [weak self] url in
-                    self?.webView.load(URLRequest(url: url))
-                },
-                routeNewWindow: { [weak self] configuration, navigationAction, windowFeatures in
-                    guard let self else { return nil }
-                    return self.webView(self.webView, createWebViewWith: configuration, for: navigationAction, windowFeatures: windowFeatures)
-                },
-                onClose: { [weak self] controller in
-                    self?.popups.removeAll { $0 === controller }
-                }
-            )
-            popups.append(controller)
-            return controller.webView
-        }
-    }
-
-    /// A readable name for the chosen route, for the new-window log
-    private static func routeName(_ route: NewWindowRoute) -> String {
-        switch route {
-        case .mainWebView: return "mainWebView"
-        case .popup: return "popup"
-        case .externalBrowser: return "externalBrowser"
-        case .ignore: return "ignore"
-        }
-    }
-
-    /// A readable name for a WKNavigationType, for the new-window log
-    private static func navigationTypeName(_ type: WKNavigationType) -> String {
-        switch type {
-        case .linkActivated: return "linkActivated"
-        case .formSubmitted: return "formSubmitted"
-        case .backForward: return "backForward"
-        case .reload: return "reload"
-        case .formResubmitted: return "formResubmitted"
-        case .other: return "other"
-        @unknown default: return "unknown"
-        }
-    }
-
-    /// The opener-supplied window size for the new-window log, e.g. "520x680" or "nilxnil"
-    private static func windowSizeDescription(_ features: WKWindowFeatures) -> String {
-        let width = features.width.map { String($0.intValue) } ?? "nil"
-        let height = features.height.map { String($0.intValue) } ?? "nil"
-        return "\(width)x\(height)"
+        popupCoordinator.handleCreateWebView(
+            configuration: configuration,
+            navigationAction: navigationAction,
+            windowFeatures: windowFeatures,
+            parentWindow: self.webView.window,
+            openInMain: { [weak self] url in
+                self?.webView.load(URLRequest(url: url))
+            }
+        )
     }
 
     /// Show the system open panel for `<input type=file>` elements, which Apple disables
@@ -752,15 +512,21 @@ class WebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelega
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
         switch message.name {
+        #if DEBUG
         case "consoleLog":
             if let msg = message.body as? String {
                 print("[JS] \(msg)")
             }
+        #endif
         case "imeEnterFix":
+            #if DEBUG
             print("[IME Debug] Native received imeEnterFix message: \(message.body)")
+            #endif
             // Delay to allow WKWebView to clear its internal stale composing state
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                #if DEBUG
                 print("[IME Debug] Native sending synthetic Enter key after 150ms delay")
+                #endif
                 self?.sendEnterKey()
             }
         case "temporaryChatIntent":

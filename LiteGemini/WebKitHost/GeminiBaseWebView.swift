@@ -13,10 +13,12 @@ class GeminiBaseWebView: WKWebView {
         return false
     }
 
+    #if DEBUG
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 36 {  // Enter key
             print("[IME Debug] Native keyDown: keyCode=\(event.keyCode), characters='\(event.characters ?? "nil")', modifiers=\(event.modifierFlags.rawValue)")
         }
         super.keyDown(with: event)
     }
+    #endif
 }

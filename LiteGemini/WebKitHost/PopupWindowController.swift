@@ -190,7 +190,7 @@ final class PopupWindowController: NSObject, NSWindowDelegate, WKNavigationDeleg
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         // The release is deferred on purpose: onClose removes the last strong
-        // reference (in WebViewModel.popups). Releasing the controller here could
+        // reference (in PopupCoordinator.popups). Releasing the controller here could
         // deallocate the WKWebView in the middle of its own delegate callback —
         // decidePolicyFor or webViewDidClose triggered this close — which is a known
         // crash source. `self` is captured strongly so the controller outlives the
