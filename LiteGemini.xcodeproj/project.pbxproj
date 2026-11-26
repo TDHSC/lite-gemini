@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A1B2C3D42F3B000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D42F3B000000000002 /* Sparkle */; };
+		A1B2C3D42F3B000000000011 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = A1B2C3D42F3B000000000012 /* Markdown */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +42,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1B2C3D42F3B000000000001 /* Sparkle in Frameworks */,
+				A1B2C3D42F3B000000000011 /* Markdown in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +86,7 @@
 			name = "Lite Gemini";
 			packageProductDependencies = (
 				A1B2C3D42F3B000000000002 /* Sparkle */,
+				A1B2C3D42F3B000000000012 /* Markdown */,
 			);
 			productName = "Lite Gemini";
 			productReference = 272B660F2F3AFDA200EBF5DA /* Lite Gemini.app */;
@@ -116,6 +119,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A1B2C3D42F3B000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				A1B2C3D42F3B000000000013 /* XCRemoteSwiftPackageReference "swift-markdown" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 272B66102F3AFDA200EBF5DA /* Products */;
@@ -392,6 +396,14 @@
 				minimumVersion = 2.10.0;
 			};
 		};
+		A1B2C3D42F3B000000000013 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-markdown";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -399,6 +411,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A1B2C3D42F3B000000000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		A1B2C3D42F3B000000000012 /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1B2C3D42F3B000000000013 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

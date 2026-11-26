@@ -1,0 +1,294 @@
+import SwiftUI
+
+// MARK: - ConversationTimelineView
+
+/// Virtualized 120Hz conversation timeline backed by `ScrollView` + `LazyVStack` with smart
+/// auto-scroll locking during live streaming and a floating `"Scroll to bottom"` glass pill.
+struct ConversationTimelineView: View {
+
+    @ObservedObject var store: ChatSessionStore
+    var topContentInset: CGFloat = LiquidGlassMetrics.topBarHeight
+    var bottomContentInset: CGFloat = 80
+    var onOpenInWebMode: ((String?) -> Void)? = nil
+    var onSaveInlineImage: ((ImageAttachment) -> Void)? = nil
+
+    private static let scrollCoordinateSpace = "lgConversationTimelineScrollSpace"
+    private static let bottomAnchorID = "lg-timeline-bottom-anchor"
+    private static let maxReadingColumnWidth: CGFloat = 780
+
+    @State private var isAutoScrollLocked = true
+    @State private var showsScrollToBottomPill = false
+    @State private var viewportSize: CGSize = CGSize(width: 640, height: 500)
+    @State private var scrollTracker = TimelineScrollTracker()
+    @State private var isHoveringScrollPill = false
+
+    private var horizontalPadding: CGFloat {
+        viewportSize.width < LiquidGlassMetrics.compactTopBarBreakpoint ? 14 : 22
+    }
+
+    private var effectiveColumnWidth: CGFloat {
+        let available = max(240, viewportSize.width - horizontalPadding * 2)
+        return min(available, Self.maxReadingColumnWidth)
+    }
+
+    private var activeStreamingTurnId: String? {
+        store.streamingState.activeTurnId
+    }
+
+    /// Lightweight scalar change key that advances on each coalesced streaming flush so
+    /// auto-scroll tracks the growing trailing response without inspecting full strings.
+    private var streamingScrollSignal: Int {
+        switch store.streamingState {
+        case .idle:
+            return 0
+        case .awaitingFirstDelta:
+            return 1
+        case .streaming(_, let thinking, _, let markdown, let images, let citations, let artifacts):
+            var hasher = Hasher()
+            hasher.combine(markdown.utf8.count)
+            hasher.combine(thinking?.utf8.count ?? 0)
+            hasher.combine(images.count)
+            hasher.combine(citations.count)
+            hasher.combine(artifacts.count)
+            return hasher.finalize()
+        }
+    }
+
+    var body: some View {
+        ScrollViewReader { scrollProxy in
+            ZStack(alignment: .bottom) {
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(alignment: .leading, spacing: 24) {
+                        ForEach(Array(store.turns.enumerated()), id: \.element.id) { index, turn in
+                            let isLatest = (index == store.turns.count - 1)
+                            let isTurnStreaming = isLatest && (store.isStreaming || activeStreamingTurnId == turn.id)
+
+                            ChatTurnRowView(
+                                turn: turn,
+                                containerWidth: effectiveColumnWidth,
+                                isLatestTurn: isLatest,
+                                isStreaming: isTurnStreaming,
+                                canEdit: isLatest && store.canEditLastTurn,
+                                canRegenerate: isLatest && store.canRegenerateLastTurn,
+                                onEdit: {
+                                    store.beginEditingLastTurn()
+                                },
+                                onRegenerate: {
+                                    Task {
+                                        await store.regenerateLastTurn()
+                                    }
+                                },
+                                onOpenInWebMode: onOpenInWebMode.map { handler in
+                                    { handler(store.conversationId) }
+                                },
+                                onSaveInlineImage: onSaveInlineImage
+                            )
+                        }
+
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.bottomAnchorID)
+                    }
+                    .frame(maxWidth: Self.maxReadingColumnWidth, alignment: .leading)
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.top, topContentInset + 14)
+                    .padding(.bottom, bottomContentInset + 18)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        GeometryReader { contentGeometry in
+                            let frame = contentGeometry.frame(in: .named(Self.scrollCoordinateSpace))
+                            Color.clear.preference(
+                                key: TimelineScrollMetricsPreferenceKey.self,
+                                value: TimelineScrollMetrics(
+                                    contentMinY: frame.minY,
+                                    contentMaxY: frame.maxY
+                                )
+                            )
+                        }
+                    )
+                }
+                .coordinateSpace(name: Self.scrollCoordinateSpace)
+                .background(
+                    GeometryReader { viewportGeometry in
+                        Color.clear.preference(
+                            key: TimelineViewportSizePreferenceKey.self,
+                            value: viewportGeometry.size
+                        )
+                    }
+                )
+                .onPreferenceChange(TimelineViewportSizePreferenceKey.self) { newSize in
+                    if abs(newSize.width - viewportSize.width) > 0.5 || abs(newSize.height - viewportSize.height) > 0.5 {
+                        viewportSize = newSize
+                    }
+                }
+                .onPreferenceChange(TimelineScrollMetricsPreferenceKey.self) { metrics in
+                    handleScrollMetricsChange(metrics)
+                }
+
+                if showsScrollToBottomPill && !store.turns.isEmpty {
+                    scrollToBottomButton(proxy: scrollProxy)
+                        .padding(.bottom, bottomContentInset + 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .zIndex(2)
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: showsScrollToBottomPill)
+            .onChange(of: store.conversationId) { _, _ in
+                reengageAutoScrollAndJump(proxy: scrollProxy, animated: false)
+            }
+            .onChange(of: store.turns.count) { oldCount, newCount in
+                if newCount > oldCount {
+                    reengageAutoScrollAndJump(proxy: scrollProxy, animated: true)
+                }
+            }
+            .onChange(of: streamingScrollSignal) { _, newValue in
+                guard newValue != 0, isAutoScrollLocked else {
+                    return
+                }
+                scrollTracker.markProgrammaticScroll()
+                scrollProxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+            }
+            .onChange(of: bottomContentInset) { oldInset, newInset in
+                if newInset > oldInset + 1, isAutoScrollLocked, !store.turns.isEmpty {
+                    scrollTracker.markProgrammaticScroll()
+                    scrollProxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                }
+            }
+            .onAppear {
+                if !store.turns.isEmpty {
+                    reengageAutoScrollAndJump(proxy: scrollProxy, animated: false)
+                }
+            }
+        }
+    }
+
+    // MARK: - Floating Scroll-to-Bottom Pill
+
+    private func scrollToBottomButton(proxy: ScrollViewProxy) -> some View {
+        Button {
+            reengageAutoScrollAndJump(proxy: proxy, animated: true)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 10.5, weight: .semibold))
+                Text("Scroll to bottom")
+                    .font(.system(size: 11.5, weight: .medium))
+            }
+            .foregroundStyle(Color.primary.opacity(isHoveringScrollPill ? 0.98 : 0.86))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .glassCapsule(interactive: true)
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.14)) {
+                isHoveringScrollPill = hovering
+            }
+        }
+        .accessibilityLabel(Text("Scroll to bottom"))
+    }
+
+    // MARK: - Smart Auto-Scroll Lock Logic
+
+    private func reengageAutoScrollAndJump(proxy: ScrollViewProxy, animated: Bool) {
+        isAutoScrollLocked = true
+        showsScrollToBottomPill = false
+        scrollTracker.markProgrammaticScroll()
+
+        if animated {
+            withAnimation(.easeOut(duration: 0.22)) {
+                proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+            }
+        } else {
+            proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+        }
+    }
+
+    private func handleScrollMetricsChange(_ metrics: TimelineScrollMetrics) {
+        let viewportHeight = viewportSize.height
+        guard viewportHeight > 0 else {
+            return
+        }
+
+        let scrollOffsetY = -metrics.contentMinY
+        let distanceFromBottom = max(0, metrics.contentMaxY - viewportHeight)
+        let previousOffsetY = scrollTracker.lastScrollOffsetY
+        scrollTracker.lastScrollOffsetY = scrollOffsetY
+
+        // Ignore transient geometry deltas while our own programmatic scrollTo settles.
+        if scrollTracker.isWithinProgrammaticGraceWindow {
+            if distanceFromBottom <= 32 {
+                if !isAutoScrollLocked {
+                    isAutoScrollLocked = true
+                }
+                if showsScrollToBottomPill {
+                    showsScrollToBottomPill = false
+                }
+            }
+            return
+        }
+
+        let userScrolledUpward = (previousOffsetY != nil) && (scrollOffsetY < (previousOffsetY ?? scrollOffsetY) - 6)
+
+        if userScrolledUpward && distanceFromBottom > 36 {
+            if isAutoScrollLocked {
+                isAutoScrollLocked = false
+            }
+        } else if distanceFromBottom <= 28 {
+            if !isAutoScrollLocked {
+                isAutoScrollLocked = true
+            }
+        }
+
+        let shouldShowPill = !isAutoScrollLocked && distanceFromBottom > 64
+        if shouldShowPill != showsScrollToBottomPill {
+            showsScrollToBottomPill = shouldShowPill
+        }
+    }
+}
+
+// MARK: - TimelineScrollTracker
+
+/// Non-observable `@MainActor` reference tracker holding continuous scroll metrics so scrolling
+/// does not trigger redundant SwiftUI view-body invalidations at 120Hz.
+@MainActor
+private final class TimelineScrollTracker {
+
+    var lastScrollOffsetY: CGFloat?
+    private var programmaticScrollGraceUntil: ContinuousClock.Instant?
+
+    var isWithinProgrammaticGraceWindow: Bool {
+        guard let deadline = programmaticScrollGraceUntil else {
+            return false
+        }
+        return ContinuousClock.now < deadline
+    }
+
+    func markProgrammaticScroll() {
+        programmaticScrollGraceUntil = ContinuousClock.now + .milliseconds(120)
+    }
+}
+
+// MARK: - Preference Keys
+
+private nonisolated struct TimelineScrollMetrics: Equatable, Sendable {
+    let contentMinY: CGFloat
+    let contentMaxY: CGFloat
+}
+
+private nonisolated struct TimelineScrollMetricsPreferenceKey: PreferenceKey {
+    static let defaultValue = TimelineScrollMetrics(contentMinY: 0, contentMaxY: 0)
+
+    static func reduce(value: inout TimelineScrollMetrics, nextValue: () -> TimelineScrollMetrics) {
+        value = nextValue()
+    }
+}
+
+private nonisolated struct TimelineViewportSizePreferenceKey: PreferenceKey {
+    static let defaultValue = CGSize(width: 640, height: 500)
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
