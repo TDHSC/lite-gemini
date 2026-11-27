@@ -62,10 +62,14 @@ jobs:
           echo "Architectures:"
           lipo -info "$APP_PATH/Contents/MacOS/Lite Gemini"
 
-          # Re-sign the entire app bundle (including embedded Sparkle.framework) to ensure consistent Team ID
-          codesign --deep --force --sign - "$APP_PATH"
-          echo "Code signature verified:"
+          # Re-sign nested Sparkle components first, then sign the outer app preserving LiteGemini.entitlements
+          if [ -d "$APP_PATH/Contents/Frameworks/Sparkle.framework" ]; then
+            codesign --deep --force --options runtime --sign - "$APP_PATH/Contents/Frameworks/Sparkle.framework"
+          fi
+          codesign --force --options runtime --entitlements LiteGemini/LiteGemini.entitlements --sign - "$APP_PATH"
+          echo "Code signature & entitlements verified:"
           codesign -dvvv "$APP_PATH"
+          codesign -d --entitlements - "$APP_PATH"
 
           mkdir -p dmg_content
           cp -R "$APP_PATH" dmg_content/

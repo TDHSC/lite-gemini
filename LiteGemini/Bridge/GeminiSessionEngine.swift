@@ -465,6 +465,8 @@ final class GeminiSessionEngine: NSObject, ChatTransport, WKNavigationDelegate, 
         configuration.userContentController.addUserScript(consoleScript)
         #endif
 
+        ClassicWebScripts.installWebAuthnFallbackIfNeeded(on: configuration.userContentController)
+
         let imeScript = WKUserScript(
             source: ClassicWebScripts.imeFixScript,
             injectionTime: .atDocumentStart,

@@ -1,7 +1,122 @@
 import Foundation
+import Security
+import WebKit
 
-/// JavaScript snippets injected into the Classic WebView (`ClassicWebViewModel`).
+/// JavaScript snippets injected into the Classic WebView (`ClassicWebViewModel`),
+/// `GeminiSessionEngine`, and sign-in `PopupWindowController` instances.
 enum ClassicWebScripts {
+
+    private nonisolated static let webAuthnGuardMarker = "/* lg-webauthn-unentitled-guard */"
+
+    /// Returns `true` only when the host process holds Apple's restricted
+    /// `com.apple.developer.web-browser.public-key-credential` entitlement required by
+    /// `AuthenticationServicesAgent` for arbitrary-domain `WKWebView` Passkey assertions.
+    nonisolated static func hasWebBrowserPasskeyEntitlement() -> Bool {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let raw = SecTaskCopyValueForEntitlement(
+                  task,
+                  "com.apple.developer.web-browser.public-key-credential" as CFString,
+                  nil
+              ) else {
+            return false
+        }
+        return (raw as? Bool) == true
+    }
+
+    /// Installs a `.atDocumentStart` guard disabling `window.PublicKeyCredential` when the app
+    /// is ad-hoc signed without Apple's restricted browser WebAuthn entitlement.
+    ///
+    /// Without this guard, `WKWebView` reports `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable() == true`
+    /// (checking Mac Touch ID hardware rather than app entitlements), causing `accounts.google.com`
+    /// to auto-force the Passkey screen and fail with `"Something went wrong"` (`AuthorizationError 1004`).
+    /// Hiding `PublicKeyCredential` makes Google Accounts smoothly offer Password, Google Prompt, and 2FA.
+    @MainActor
+    static func installWebAuthnFallbackIfNeeded(on contentController: WKUserContentController) {
+        guard !hasWebBrowserPasskeyEntitlement() else {
+            return
+        }
+        let alreadyInstalled = contentController.userScripts.contains {
+            $0.source.contains(webAuthnGuardMarker)
+        }
+        guard !alreadyInstalled else {
+            return
+        }
+        let script = WKUserScript(
+            source: disableUnsupportedWebAuthnScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        contentController.addUserScript(script)
+    }
+
+    /// Document-start script hiding unsupported WebAuthn APIs on Google sign-in pages in unentitled builds.
+    nonisolated static let disableUnsupportedWebAuthnScript = """
+    /* lg-webauthn-unentitled-guard */
+    (function() {
+        if (window.__lgWebAuthnGuardInstalled) return;
+        window.__lgWebAuthnGuardInstalled = true;
+
+        var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
+        if (host && host !== 'accounts.google.com' && !host.endsWith('.google.com')) {
+            return;
+        }
+
+        try {
+            if (typeof window.PublicKeyCredential !== 'undefined') {
+                try {
+                    window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = function() {
+                        return Promise.resolve(false);
+                    };
+                    window.PublicKeyCredential.isConditionalMediationAvailable = function() {
+                        return Promise.resolve(false);
+                    };
+                } catch (_) {}
+
+                var deleted = false;
+                try {
+                    deleted = delete window.PublicKeyCredential;
+                } catch (_) {}
+                if (!deleted && typeof window.PublicKeyCredential !== 'undefined') {
+                    try {
+                        Object.defineProperty(window, 'PublicKeyCredential', {
+                            value: undefined,
+                            configurable: true,
+                            writable: true
+                        });
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {}
+
+        try {
+            var creds = navigator && navigator.credentials;
+            if (creds) {
+                if (typeof creds.get === 'function') {
+                    var origGet = creds.get.bind(creds);
+                    creds.get = function(options) {
+                        if (options && options.publicKey) {
+                            return Promise.reject(
+                                new DOMException('Passkeys require a browser WebAuthn entitlement on macOS.', 'NotSupportedError')
+                            );
+                        }
+                        return origGet(options);
+                    };
+                }
+                if (typeof creds.create === 'function') {
+                    var origCreate = creds.create.bind(creds);
+                    creds.create = function(options) {
+                        if (options && options.publicKey) {
+                            return Promise.reject(
+                                new DOMException('Passkeys require a browser WebAuthn entitlement on macOS.', 'NotSupportedError')
+                            );
+                        }
+                        return origCreate(options);
+                    };
+                }
+            }
+        } catch (_) {}
+    })();
+    """
 
     #if DEBUG
     /// Console log bridge — forwards JS `console.log` calls to the native Xcode console.

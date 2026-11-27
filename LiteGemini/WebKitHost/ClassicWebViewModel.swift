@@ -107,6 +107,8 @@ class ClassicWebViewModel: NSObject, ObservableObject, WKNavigationDelegate, WKU
         configuration.userContentController.addUserScript(consoleScript)
         #endif
 
+        ClassicWebScripts.installWebAuthnFallbackIfNeeded(on: configuration.userContentController)
+
         // Inject IME fix script via WKUserScript, more reliable than evaluateJavaScript
         let imeScript = WKUserScript(
             source: ClassicWebScripts.imeFixScript,

@@ -60,6 +60,7 @@ final class PopupWindowController: NSObject, NSWindowDelegate, WKNavigationDeleg
         openedForAccount = NewWindowRouter.isAccountFlow(initialURL: initialURL, hadExplicitSize: hadExplicitSize)
         startedBlank = NewWindowRouter.isBlankURL(initialURL)
 
+        ClassicWebScripts.installWebAuthnFallbackIfNeeded(on: configuration.userContentController)
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.underPageBackgroundColor = AppDelegate.geminiSurfaceNSColor
         webView.setValue(false, forKey: "drawsBackground")
