@@ -49,7 +49,9 @@ enum ClassicWebScripts {
         contentController.addUserScript(script)
     }
 
-    /// Document-start script hiding unsupported WebAuthn APIs on Google sign-in pages in unentitled builds.
+    /// Document-start script preserving macOS AutoFill Conditional Passkeys (`mediation: "conditional"`,
+    /// handled out-of-process by Apple's entitled `SafariPlatformSupport.Helper.xpc`) while preventing
+    /// Google Accounts from auto-launching unentitled modal WebAuthn (`Code=1004` / `"Something went wrong"`).
     nonisolated static let disableUnsupportedWebAuthnScript = """
     /* lg-webauthn-unentitled-guard */
     (function() {
@@ -63,56 +65,42 @@ enum ClassicWebScripts {
 
         try {
             if (typeof window.PublicKeyCredential !== 'undefined') {
-                try {
-                    window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = function() {
-                        return Promise.resolve(false);
-                    };
-                    window.PublicKeyCredential.isConditionalMediationAvailable = function() {
-                        return Promise.resolve(false);
-                    };
-                } catch (_) {}
-
-                var deleted = false;
-                try {
-                    deleted = delete window.PublicKeyCredential;
-                } catch (_) {}
-                if (!deleted && typeof window.PublicKeyCredential !== 'undefined') {
-                    try {
-                        Object.defineProperty(window, 'PublicKeyCredential', {
-                            value: undefined,
-                            configurable: true,
-                            writable: true
-                        });
-                    } catch (_) {}
-                }
+                // Keep window.PublicKeyCredential and isConditionalMediationAvailable() intact so
+                // clicking the <input autocomplete="username webauthn"> email box still invokes
+                // macOS's entitled SafariPlatformSupport.Helper Touch ID Passkey AutoFill menu (as in v0.4.5),
+                // while reporting false for modal platform assertions after clicking "Next".
+                window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = function() {
+                    return Promise.resolve(false);
+                };
             }
         } catch (_) {}
 
         try {
-            var creds = navigator && navigator.credentials;
-            if (creds) {
-                if (typeof creds.get === 'function') {
-                    var origGet = creds.get.bind(creds);
-                    creds.get = function(options) {
-                        if (options && options.publicKey) {
-                            return Promise.reject(
-                                new DOMException('Passkeys require a browser WebAuthn entitlement on macOS.', 'NotSupportedError')
-                            );
-                        }
-                        return origGet(options);
-                    };
-                }
-                if (typeof creds.create === 'function') {
-                    var origCreate = creds.create.bind(creds);
-                    creds.create = function(options) {
-                        if (options && options.publicKey) {
-                            return Promise.reject(
-                                new DOMException('Passkeys require a browser WebAuthn entitlement on macOS.', 'NotSupportedError')
-                            );
-                        }
-                        return origCreate(options);
-                    };
-                }
+            var proto = (typeof window.CredentialsContainer === 'function' && window.CredentialsContainer.prototype)
+                ? window.CredentialsContainer.prototype
+                : (navigator && navigator.credentials ? Object.getPrototypeOf(navigator.credentials) : null);
+
+            if (proto && typeof proto.get === 'function') {
+                var origProtoGet = proto.get;
+                proto.get = function(options) {
+                    if (options && options.publicKey && options.mediation !== 'conditional') {
+                        return Promise.reject(
+                            new DOMException('Modal Passkey requires browser entitlement; use input AutoFill Passkey.', 'NotSupportedError')
+                        );
+                    }
+                    return origProtoGet.apply(this, arguments);
+                };
+            }
+            if (proto && typeof proto.create === 'function') {
+                var origProtoCreate = proto.create;
+                proto.create = function(options) {
+                    if (options && options.publicKey) {
+                        return Promise.reject(
+                            new DOMException('Passkey registration requires a system browser.', 'NotSupportedError')
+                        );
+                    }
+                    return origProtoCreate.apply(this, arguments);
+                };
             }
         } catch (_) {}
     })();
