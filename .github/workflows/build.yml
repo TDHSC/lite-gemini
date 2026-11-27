@@ -63,10 +63,11 @@ jobs:
           lipo -info "$APP_PATH/Contents/MacOS/Lite Gemini"
 
           # Re-sign nested Sparkle components first, then sign the outer app preserving LiteGemini.entitlements
+          # without --options runtime (which blocks unentitled TCC attribution for SafariPlatformSupport.Helper & audio in ad-hoc builds)
           if [ -d "$APP_PATH/Contents/Frameworks/Sparkle.framework" ]; then
-            codesign --deep --force --options runtime --sign - "$APP_PATH/Contents/Frameworks/Sparkle.framework"
+            codesign --deep --force --sign - "$APP_PATH/Contents/Frameworks/Sparkle.framework"
           fi
-          codesign --force --options runtime --entitlements LiteGemini/LiteGemini.entitlements --sign - "$APP_PATH"
+          codesign --force --entitlements LiteGemini/LiteGemini.entitlements --sign - "$APP_PATH"
           echo "Code signature & entitlements verified:"
           codesign -dvvv "$APP_PATH"
           codesign -d --entitlements - "$APP_PATH"

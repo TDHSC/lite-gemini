@@ -8,28 +8,36 @@ enum ClassicWebScripts {
 
     private nonisolated static let webAuthnGuardMarker = "/* lg-webauthn-unentitled-guard */"
 
-    /// Returns `true` only when the host process holds Apple's restricted
-    /// `com.apple.developer.web-browser.public-key-credential` entitlement required by
-    /// `AuthenticationServicesAgent` for arbitrary-domain `WKWebView` Passkey assertions.
+    /// Returns `true` only when the host process holds Apple's restricted browser WebAuthn
+    /// entitlement required by `AuthenticationServicesAgent` (`+[ASCAgent isClientWithAuditTokenAWebBrowser:]`)
+    /// for arbitrary-domain `WKWebView` Passkey assertions.
     nonisolated static func hasWebBrowserPasskeyEntitlement() -> Bool {
-        guard let task = SecTaskCreateFromSelf(nil),
-              let raw = SecTaskCopyValueForEntitlement(
-                  task,
-                  "com.apple.developer.web-browser.public-key-credential" as CFString,
-                  nil
-              ) else {
+        guard let task = SecTaskCreateFromSelf(nil) else {
             return false
         }
-        return (raw as? Bool) == true
+        let browserEntitlements: [CFString] = [
+            "com.apple.developer.web-browser.public-key-credential" as CFString,
+            "com.apple.developer.web-browser" as CFString
+        ]
+        for key in browserEntitlements {
+            if let raw = SecTaskCopyValueForEntitlement(task, key, nil),
+               (raw as? Bool) == true {
+                return true
+            }
+        }
+        return false
     }
 
-    /// Installs a `.atDocumentStart` guard disabling `window.PublicKeyCredential` when the app
-    /// is ad-hoc signed without Apple's restricted browser WebAuthn entitlement.
+    /// Installs a `.atDocumentStart` guard removing unsupported WebAuthn globals when the app
+    /// is signed without Apple's restricted browser WebAuthn entitlement.
     ///
-    /// Without this guard, `WKWebView` reports `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable() == true`
-    /// (checking Mac Touch ID hardware rather than app entitlements), causing `accounts.google.com`
-    /// to auto-force the Passkey screen and fail with `"Something went wrong"` (`AuthorizationError 1004`).
-    /// Hiding `PublicKeyCredential` makes Google Accounts smoothly offer Password, Google Prompt, and 2FA.
+    /// On macOS, `AuthenticationServicesAgent` rejects both modal and conditional (`mediation: "conditional"`)
+    /// `PublicKeyCredential` requests from unentitled `WKWebView` hosts (`AuthorizationError 1004`),
+    /// yet `WKWebView` still exposes `window.PublicKeyCredential` and `getClientCapabilities()` reporting
+    /// platform and hybrid Bluetooth passkey support. Removing WebAuthn constructors at document start
+    /// keeps `Credential` / `CredentialsContainer` intact for Keychain Password AutoFill while making
+    /// Google Accounts route directly to `/v3/signin/challenge/pwd` (Password / Google Prompt / 2FA)
+    /// instead of failing on `/v3/signin/challenge/pk` with `"Something went wrong"`.
     @MainActor
     static func installWebAuthnFallbackIfNeeded(on contentController: WKUserContentController) {
         guard !hasWebBrowserPasskeyEntitlement() else {
@@ -49,29 +57,42 @@ enum ClassicWebScripts {
         contentController.addUserScript(script)
     }
 
-    /// Document-start script preserving macOS AutoFill Conditional Passkeys (`mediation: "conditional"`,
-    /// handled out-of-process by Apple's entitled `SafariPlatformSupport.Helper.xpc`) while preventing
-    /// Google Accounts from auto-launching unentitled modal WebAuthn (`Code=1004` / `"Something went wrong"`).
+    /// Document-start script removing unsupported WebAuthn APIs in unentitled `WKWebView` builds
+    /// while preserving `CredentialsContainer` for standard password credentials and AutoFill.
     nonisolated static let disableUnsupportedWebAuthnScript = """
     /* lg-webauthn-unentitled-guard */
     (function() {
         if (window.__lgWebAuthnGuardInstalled) return;
         window.__lgWebAuthnGuardInstalled = true;
 
-        var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
-        if (host && host !== 'accounts.google.com' && !host.endsWith('.google.com')) {
-            return;
-        }
-
         try {
             if (typeof window.PublicKeyCredential !== 'undefined') {
-                // Keep window.PublicKeyCredential and isConditionalMediationAvailable() intact so
-                // clicking the <input autocomplete="username webauthn"> email box still invokes
-                // macOS's entitled SafariPlatformSupport.Helper Touch ID Passkey AutoFill menu (as in v0.4.5),
-                // while reporting false for modal platform assertions after clicking "Next".
-                window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = function() {
-                    return Promise.resolve(false);
-                };
+                try {
+                    window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = function() {
+                        return Promise.resolve(false);
+                    };
+                    window.PublicKeyCredential.isConditionalMediationAvailable = function() {
+                        return Promise.resolve(false);
+                    };
+                    window.PublicKeyCredential.getClientCapabilities = function() {
+                        return Promise.resolve({});
+                    };
+                } catch (_) {}
+            }
+
+            var webAuthnGlobals = [
+                'PublicKeyCredential',
+                'AuthenticatorResponse',
+                'AuthenticatorAssertionResponse',
+                'AuthenticatorAttestationResponse'
+            ];
+            var winProto = typeof Window === 'function' ? Window.prototype : null;
+            for (var i = 0; i < webAuthnGlobals.length; i++) {
+                var prop = webAuthnGlobals[i];
+                try { delete window[prop]; } catch (_) {}
+                if (winProto) {
+                    try { delete winProto[prop]; } catch (_) {}
+                }
             }
         } catch (_) {}
 
@@ -83,9 +104,14 @@ enum ClassicWebScripts {
             if (proto && typeof proto.get === 'function') {
                 var origProtoGet = proto.get;
                 proto.get = function(options) {
-                    if (options && options.publicKey && options.mediation !== 'conditional') {
+                    if (options && options.publicKey) {
+                        if (options.password || options.federated || options.identity) {
+                            var cloned = Object.assign({}, options);
+                            delete cloned.publicKey;
+                            return origProtoGet.call(this, cloned);
+                        }
                         return Promise.reject(
-                            new DOMException('Modal Passkey requires browser entitlement; use input AutoFill Passkey.', 'NotSupportedError')
+                            new DOMException('The operation is not supported.', 'NotSupportedError')
                         );
                     }
                     return origProtoGet.apply(this, arguments);
@@ -96,7 +122,7 @@ enum ClassicWebScripts {
                 proto.create = function(options) {
                     if (options && options.publicKey) {
                         return Promise.reject(
-                            new DOMException('Passkey registration requires a system browser.', 'NotSupportedError')
+                            new DOMException('The operation is not supported.', 'NotSupportedError')
                         );
                     }
                     return origProtoCreate.apply(this, arguments);
