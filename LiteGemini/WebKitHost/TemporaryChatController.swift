@@ -27,6 +27,8 @@ final class TemporaryChatController {
         let selectorsJSON = encodeJSONStringArray(GeminiBridgeSelectors.ComposerDOM.newChatTrigger.all)
         return """
         (function() {
+            var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
+            if (window.opener || (host && host !== 'gemini.google.com')) return;
             if (window.__tempChatIntentInstalled) return;
             window.__tempChatIntentInstalled = true;
             var NEW_CHAT_SELECTORS = \(selectorsJSON);

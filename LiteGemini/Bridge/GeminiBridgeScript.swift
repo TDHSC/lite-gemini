@@ -94,6 +94,9 @@ enum GeminiBridgeScript {
 
         return """
         (function() {
+            var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
+            var proto = (window.location && window.location.protocol ? window.location.protocol : '').toLowerCase();
+            if (window.opener || (host && host !== 'gemini.google.com' && proto !== 'lgtest:')) return;
             if (window.__lgGeminiBridgeInstalled) return;
             window.__lgGeminiBridgeInstalled = true;
 

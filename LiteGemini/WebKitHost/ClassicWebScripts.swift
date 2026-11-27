@@ -143,6 +143,8 @@ enum ClassicWebScripts {
     /// window backdrop blend seamlessly in both dark (#131314) and light (#FFFFFF) themes.
     static let themeSyncScript = """
     (function() {
+        var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
+        if (window.opener || (host && host !== 'gemini.google.com')) return;
         if (window.__themeSyncInstalled) return;
         window.__themeSyncInstalled = true;
         var lastColor = '';
@@ -185,6 +187,8 @@ enum ClassicWebScripts {
     /// Tracks real composing state and blocks buggy Enter events from reaching the page.
     static let imeFixScript = """
     (function() {
+        var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
+        if (window.opener || (host && host !== 'gemini.google.com')) return;
         if (window.__imeFixInstalled) return;
         window.__imeFixInstalled = true;
 

@@ -109,6 +109,10 @@ final class GeminiRenderSuppressor {
         return """
         \(userScriptMarker)
         (function() {
+            var host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
+            var proto = (window.location && window.location.protocol ? window.location.protocol : '').toLowerCase();
+            if (window.opener || (host && host !== 'gemini.google.com' && proto !== 'lgtest:')) return;
+
             var CFG = \(configJSON);
             if (!CFG.styleId || !CFG.cssText) return;
             window.__lgRenderSuppressorActive = true;
@@ -150,6 +154,11 @@ final class GeminiRenderSuppressor {
     /// Function body executed via `WKWebView.callAsyncJavaScript` to toggle `#lg-native-render-suppressor`
     /// dynamically without reloading the page.
     private nonisolated static let setSuppressedFunctionBody = """
+    var currentHost = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase();
+    var currentProto = (window.location && window.location.protocol ? window.location.protocol : '').toLowerCase();
+    if (window.opener || (currentHost && currentHost !== 'gemini.google.com' && currentProto !== 'lgtest:')) {
+        suppressed = false;
+    }
     window.__lgRenderSuppressorActive = Boolean(suppressed);
 
     if (!suppressed) {
