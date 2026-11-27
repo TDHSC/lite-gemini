@@ -110,26 +110,30 @@ struct OfflineContractTestRunner {
         print("Running Lite Gemini Offline Protocol & Algorithm Contract Tests (v2.0 + v2.1 + v2.2)...")
 
         runTest("v2.0 WIZ signed-in vs signed-out auth state resolution") {
-            // Signed-out anonymous WIZ_global_data (SNlM0e absent, S06Grb == "")
+            // Signed-out anonymous WIZ_global_data (SNlM0e absent, S06Grb == "", Lz8rbb == false)
             let anonWIZ = JSONValue.object([
                 "S06Grb": .string(""),
+                "W3Yyqf": .string(""),
                 "QrtxK": .string(""),
                 "cfb2h": .string(GeminiBridgeSelectors.verifiedBuildLabel),
-                "Lz8rbb": .bool(false)
+                "Lz8rbb": .bool(false),
+                "M9l3o": .string(""),
+                "dSupif": .string("")
             ])
             let anonBoot = GeminiPayloadParser.parseBootAuthSnapshot(wizJSON: anonWIZ)
             try expectEqual(anonBoot.xsrfTokenPresent, false)
             try expectEqual(anonBoot.gaiaUserId, nil)
+            try expectEqual(anonBoot.isAnonymousSession, true)
             try expectEqual(
                 GeminiPayloadParser.resolveAuthState(boot: anonBoot, peopleProfile: nil),
                 .signedOut
             )
 
-            // Explicit anonymous session flag forces signedOut even if other fields exist
+            // Explicit test override `isAnonymousSession: true` forces signedOut
             let flaggedAnonWIZ = JSONValue.object([
                 "SNlM0e": .string("stale-token"),
                 "S06Grb": .string("123456"),
-                "Lz8rbb": .bool(true)
+                "isAnonymousSession": .bool(true)
             ])
             let flaggedBoot = GeminiPayloadParser.parseBootAuthSnapshot(wizJSON: flaggedAnonWIZ)
             try expectEqual(
@@ -137,18 +141,22 @@ struct OfflineContractTestRunner {
                 .signedOut
             )
 
-            // Signed-in WIZ + PeopleProfile
+            // Real signed-in WIZ (`Lz8rbb == true` isViewerLoggedIn, `M9l3o` / `dSupif` populated!) + PeopleProfile
             let signedInWIZ = JSONValue.object([
                 "SNlM0e": .string("AB12345:1730000000"),
                 "S06Grb": .string("109876543210"),
+                "W3Yyqf": .string("obf-user-id"),
                 "oPEP7c": .string("alice@example.com"),
                 "QrtxK": .string("1"),
-                "Lz8rbb": .bool(false)
+                "Lz8rbb": .bool(true),
+                "M9l3o": .string("https://geminiweb-pa.clients6.google.com"),
+                "dSupif": .string("https://geminiweb-pa.clients6.google.com")
             ])
             let signedInBoot = GeminiPayloadParser.parseBootAuthSnapshot(
                 wizJSON: signedInWIZ,
                 pageURL: URL(string: "https://gemini.google.com/u/1/app")
             )
+            try expectEqual(signedInBoot.isAnonymousSession, false)
             let profile = PeopleProfile(
                 email: "alice@example.com",
                 displayName: "Alice Example",
@@ -376,17 +384,30 @@ struct OfflineContractTestRunner {
             try expectEqual(statusRes.models[0].isThinkingCapable, false)
             try expectEqual(statusRes.models[1].isThinkingCapable, true)
 
+            // otAQ7b with omitted proto field 15 (`innerJSON[14] == .null`) defaults to AVAILABLE (1000)
+            var omittedStatusArray = statusArray
+            omittedStatusArray[14] = .null
+            let omittedStatusRes = GeminiPayloadParser.parseUserStatus(.array(omittedStatusArray))
+            try expectEqual(omittedStatusRes?.statusCode, 1000)
+            try expectEqual(omittedStatusRes?.models.count, 2)
+
             var unauthArray = Array(repeating: JSONValue.null, count: 15)
             unauthArray[14] = .int(1016)
             let unauthRes = GeminiPayloadParser.parseUserStatus(.array(unauthArray))
             try expectEqual(unauthRes?.isUnauthenticated, true)
             try expectEqual(unauthRes?.challenge?.kind, .reauthRequired)
 
-            // o30O0e (GetPeople)
+            // o30O0e (GetPeople) — live repeated XSf wrapper at [0][0][2] + legacy [0][2] fallback
             var personArr = Array(repeating: JSONValue.null, count: 10)
             personArr[2] = .array([.array([.string("Jane Doe"), .null, .null, .string("Jane")])])
             personArr[3] = .array([.array([.string("https://lh3.googleusercontent.com/jane.png")])])
             personArr[9] = .array([.array([.string("jane@example.com")])])
+            let livePeopleJSON = JSONValue.array([.array([.array([.null, .int(1), .array(personArr)])])])
+            let livePeople = GeminiPayloadParser.parsePeopleProfile(livePeopleJSON)
+            try expectEqual(livePeople?.email, "jane@example.com")
+            try expectEqual(livePeople?.displayName, "Jane Doe")
+            try expectEqual(livePeople?.shortName, "Jane")
+
             let peopleJSON = JSONValue.array([.array([.null, .null, .array(personArr)])])
             let people = GeminiPayloadParser.parsePeopleProfile(peopleJSON)
             try expectEqual(people?.email, "jane@example.com")

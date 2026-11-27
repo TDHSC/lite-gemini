@@ -1249,7 +1249,7 @@ def analyze_wiz_keys(contract: SourceContract, idx: CorpusIndex) -> list[CheckRe
             )
             continue
 
-        if item.name == "gaiaUserId":
+        if item.name in ("gaiaUserId", "actualUserObfuscatedId"):
             anon_empty = (not in_wiz) or (wiz_val in (None, ""))
             if anon_empty and (in_wiz or js_chunks):
                 status = "PASS"
@@ -1258,15 +1258,15 @@ def analyze_wiz_keys(contract: SourceContract, idx: CorpusIndex) -> list[CheckRe
                     if in_wiz
                     else f"referenced in {len(js_chunks)} JS chunk(s)"
                 )
-                diagnosis = "Anonymous Gaia ID invariant holds (empty string when signed out)."
+                diagnosis = f"Anonymous user ID invariant holds ({item.name} is empty when signed out)."
             elif not anon_empty:
                 status = "BREAKING_DRIFT"
                 observed = f"WIZ[{key!r}]={wiz_val!r} (expected empty string when signed out)"
-                diagnosis = f"Gaia user ID key {key!r} is non-empty on an anonymous session."
+                diagnosis = f"User ID key {key!r} is non-empty on an anonymous session."
             else:
                 status = "BREAKING_DRIFT"
                 observed = "absent in both WIZ_global_data and live JS"
-                diagnosis = f"Gaia user ID key {key!r} disappeared from both boot globals and JS."
+                diagnosis = f"User ID key {key!r} disappeared from both boot globals and JS."
             results.append(
                 CheckResult(
                     check_id=f"wiz.{item.name}",
@@ -1276,6 +1276,39 @@ def analyze_wiz_keys(contract: SourceContract, idx: CorpusIndex) -> list[CheckRe
                     status=status,
                     location=item.location,
                     expected=f"WIZ[{key!r}] == '' when anonymous and present in WIZ/JS",
+                    observed=observed,
+                    diagnosis=diagnosis,
+                    source_chunks=(["html"] if in_wiz else []) + js_chunks,
+                )
+            )
+            continue
+
+        if item.name == "isViewerLoggedIn":
+            anon_false = in_wiz and (wiz_val is False)
+            if anon_false and js_chunks:
+                status = "PASS"
+                observed = f"WIZ[{key!r}]=False when anonymous; referenced in {len(js_chunks)} JS chunk(s)"
+                diagnosis = "isViewerLoggedIn polarity verified (False when signed out, True when signed in)."
+            elif in_wiz and wiz_val is not False:
+                status = "BREAKING_DRIFT"
+                observed = f"WIZ[{key!r}]={wiz_val!r} (expected False when signed out)"
+                diagnosis = (
+                    f"isViewerLoggedIn key {key!r} was {wiz_val!r} instead of False on anonymous /app; "
+                    "auth polarity invariant broke."
+                )
+            else:
+                status = "BREAKING_DRIFT"
+                observed = "absent in anonymous WIZ_global_data or unreferenced in live JS"
+                diagnosis = f"isViewerLoggedIn key {key!r} missing from anonymous WIZ_global_data or JS."
+            results.append(
+                CheckResult(
+                    check_id=f"wiz.{item.name}",
+                    layer="wiz_global_data",
+                    version="v2.0",
+                    name=f"WizGlobalDataKeys.{item.name} ({key})",
+                    status=status,
+                    location=item.location,
+                    expected=f"WIZ[{key!r}] === False when anonymous and referenced in JS",
                     observed=observed,
                     diagnosis=diagnosis,
                     source_chunks=(["html"] if in_wiz else []) + js_chunks,

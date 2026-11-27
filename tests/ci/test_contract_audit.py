@@ -38,6 +38,7 @@ def build_synthetic_passing_corpus(contract: agc.SourceContract) -> dict[str, An
     # 1. Anonymous WIZ_global_data (SNlM0e absent, S06Grb == "")
     wiz_data: dict[str, Any] = {
         "S06Grb": "",
+        "W3Yyqf": "",
         "QrtxK": "",
         "cfb2h": contract.verified_build_label,
         "FdrFJe": "-123456789",
@@ -52,11 +53,12 @@ def build_synthetic_passing_corpus(contract: agc.SourceContract) -> dict[str, An
         "PI9WOb": "synthetic-server-token",
         "M9l3o": "",
         "dSupif": "",
+        "GruApd": "",
     }
 
     # 2. Synthetic Closure JS covering WIZ refs, endpoints, all RPCs, proto decoders, and DOM atoms
     closure_parts: list[str] = [
-        '_.ve("SNlM0e");_.ve("oPEP7c");_.ve("S06Grb");_.ve("Lz8rbb");_.ve("PI9WOb");',
+        '_.ve("SNlM0e");_.ve("oPEP7c");_.ve("S06Grb");_.ve("W3Yyqf");_.ve("Lz8rbb");_.ve("PI9WOb");_.ve("GruApd");',
         'const EP=["gemini.google.com","geminiweb-pa.clients6.google.com","push.clients6.google.com",'
         '"accounts.google.com","https://gemini.google.com","https://geminiweb-pa.clients6.google.com",'
         '"/v1/processSession","/$rpc/assistant.lamda.bard.GeminiWebService/ProcessSession",'

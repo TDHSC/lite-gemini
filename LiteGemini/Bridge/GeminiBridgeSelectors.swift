@@ -50,7 +50,8 @@ nonisolated enum GeminiBridgeSelectors: Sendable {
         /// Canonical Gemini chat app URL
         static let appURLString = "https://gemini.google.com/app"
         /// Sign-in popup URL routed through `NewWindowRouter` / `PopupWindowController`
-        static let signInURLString = "https://accounts.google.com/ServiceLogin?passive=1209600&osid=1&continue=https%3A%2F%2Fgemini.google.com%2Fapp"
+        /// (omits `passive=` so Google Accounts always prompts interactively instead of silently bouncing back)
+        static let signInURLString = "https://accounts.google.com/ServiceLogin?osid=1&continue=https%3A%2F%2Fgemini.google.com%2Fapp&followup=https%3A%2F%2Fgemini.google.com%2Fapp"
         /// Add-another-account popup URL
         static let addAccountURLString = "https://accounts.google.com/AddSession?continue=https%3A%2F%2Fgemini.google.com%2Fapp"
 
@@ -90,6 +91,8 @@ nonisolated enum GeminiBridgeSelectors: Sendable {
         static let xsrfToken = "SNlM0e"
         /// Numeric Gaia user ID; non-empty string when signed in, empty string `""` when signed out
         static let gaiaUserId = "S06Grb"
+        /// Obfuscated user ID exposed to Islands (`actualUserObfuscatedId`); non-empty when signed in
+        static let actualUserObfuscatedId = "W3Yyqf"
         /// Signed-in user email address (when exposed in boot globals; backed up by `o30O0e` / DOM)
         static let userEmail = "oPEP7c"
         /// Active multi-account `authuser` index (`"0"`, `"1"`, ... when signed in; `""` when signed out)
@@ -112,12 +115,16 @@ nonisolated enum GeminiBridgeSelectors: Sendable {
         static let uploadClientContext = "Ylro7b"
         /// Page locale (e.g. `"en-US"`)
         static let locale = "TuX5cc"
-        /// Signed-out / anonymous state boolean flag inspected by Gemini's internal auth helpers
-        static let isAnonymousSession = "Lz8rbb"
-        /// Server token sent as `X-Server-Token` on streaming requests
+        /// Viewer logged-in boolean (`isViewerLoggedIn` in Islands): `true` when signed in, `false` when signed out
+        static let isViewerLoggedIn = "Lz8rbb"
+        /// Server token sent as `X-Server-Token` on streaming & GraphQL requests
         static let serverToken = "PI9WOb"
-        /// Secondary signed-out indicator string keys checked alongside `Lz8rbb`
-        static let signedOutAuxiliaryKeys: [String] = ["M9l3o", "dSupif"]
+        /// Omakase GraphQL origin (`oxygenGraphqlUrl`): `"https://geminiweb-pa.clients6.google.com"` when signed in, `""` when signed out
+        static let oxygenGraphqlUrl = "M9l3o"
+        /// Oxygen WebChannel origin (`oxygenWebchannelUrl`): `"https://geminiweb-pa.clients6.google.com"` when signed in, `""` when signed out
+        static let oxygenWebchannelUrl = "dSupif"
+        /// Hydrofoil Mendel flags (`hydrofoilMendelFlags`) forwarded to Omakase `ExecuteGraphqlHttp`
+        static let hydrofoilMendelFlags = "GruApd"
     }
 
     // MARK: - BatchExecute RPC IDs

@@ -1252,8 +1252,13 @@ nonisolated enum GeminiPayloadParser {
             return nil
         }
 
-        guard let statusCode = innerJSON[Idx.statusCode.rawValue]?.intValue else {
-            logParseError("otAQ7b payload missing status code at index \(Idx.statusCode.rawValue)")
+        let statusCode: Int
+        if let explicitStatus = innerJSON[Idx.statusCode.rawValue]?.intValue {
+            statusCode = explicitStatus
+        } else if innerJSON[Idx.availableModels.rawValue]?.arrayValue != nil {
+            // Closure `Oqd(a)` (`if (!_.Pg(a, 15)) return "AVAILABLE"`) treats omitted proto field 15 as `1000`.
+            statusCode = GeminiBridgeSelectors.WireFormat.StatusCode.accountAvailable.rawValue
+        } else {
             return nil
         }
 
@@ -1339,8 +1344,9 @@ nonisolated enum GeminiPayloadParser {
 
     /// Parses `o30O0e` (`InternalPeopleService.GetPeople`) inner JSON into `PeopleProfile`.
     static func parsePeopleProfile(_ innerJSON: JSONValue) -> PeopleProfile? {
-        guard let person = innerJSON[0]?[2], person.arrayValue != nil else {
-            logParseError("o30O0e payload missing person entry at [0][2]")
+        // Closure `VTf(a)[0]` -> `_.l(d, _.vR, 3)` wraps `Person` inside repeated `XSf` at `[0][0][2]`
+        // (while legacy/simplified fixtures may place `Person` directly at `[0][2]`).
+        guard let person = innerJSON[0]?[0]?[2] ?? innerJSON[0]?[2], person.arrayValue != nil else {
             return nil
         }
 
@@ -1378,19 +1384,20 @@ nonisolated enum GeminiPayloadParser {
         }
 
         let gaiaUserId = wizJSON[Keys.gaiaUserId]?.nonEmptyStringValue
+            ?? wizJSON[Keys.actualUserObfuscatedId]?.nonEmptyStringValue
         let email = wizJSON[Keys.userEmail]?.nonEmptyStringValue
         let rawAuthUser = wizJSON[Keys.authUserIndex]?.intValue
         let authUserIndex = rawAuthUser.flatMap { $0 >= 0 ? $0 : nil }
         let buildLabel = wizJSON[Keys.buildLabel]?.nonEmptyStringValue
 
-        var isAnonymous = wizJSON[Keys.isAnonymousSession]?.boolValue ?? false
-        if !isAnonymous {
-            for auxKey in Keys.signedOutAuxiliaryKeys {
-                if wizJSON[auxKey]?.boolValue == true {
-                    isAnonymous = true
-                    break
-                }
-            }
+        // `Lz8rbb` is `isViewerLoggedIn` (`true` when signed in, `false` when signed out).
+        let isAnonymous: Bool
+        if let explicitAnonymous = wizJSON["isAnonymousSession"]?.boolValue {
+            isAnonymous = explicitAnonymous
+        } else if let viewerLoggedIn = wizJSON[Keys.isViewerLoggedIn]?.boolValue {
+            isAnonymous = !viewerLoggedIn && !xsrfPresent && gaiaUserId == nil
+        } else {
+            isAnonymous = false
         }
 
         let hasSignedOutDOM = domJSON?["hasSignedOutMarker"]?.boolValue ?? false

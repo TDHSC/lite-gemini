@@ -67,11 +67,11 @@ enum GeminiBridgeScript {
             "wizKeys": [
                 "xsrfToken": WizKeys.xsrfToken,
                 "gaiaUserId": WizKeys.gaiaUserId,
+                "actualUserObfuscatedId": WizKeys.actualUserObfuscatedId,
                 "userEmail": WizKeys.userEmail,
                 "authUserIndex": WizKeys.authUserIndex,
                 "buildLabel": WizKeys.buildLabel,
-                "isAnonymousSession": WizKeys.isAnonymousSession,
-                "signedOutAuxiliaryKeys": WizKeys.signedOutAuxiliaryKeys
+                "isViewerLoggedIn": WizKeys.isViewerLoggedIn
             ],
             "selectors": [
                 "signedOutTrigger": AuthDOM.signedOutTrigger.all,
@@ -482,17 +482,16 @@ enum GeminiBridgeScript {
                     xsrfTokenPresent: typeof xsrfVal === 'string' && xsrfVal.length > 0
                 };
                 if (typeof wiz[wk.gaiaUserId] === 'string') wizSummary[wk.gaiaUserId] = wiz[wk.gaiaUserId];
+                if (typeof wiz[wk.actualUserObfuscatedId] === 'string') {
+                    wizSummary[wk.actualUserObfuscatedId] = wiz[wk.actualUserObfuscatedId];
+                }
                 if (typeof wiz[wk.userEmail] === 'string') wizSummary[wk.userEmail] = wiz[wk.userEmail];
                 if (wiz[wk.authUserIndex] !== undefined && wiz[wk.authUserIndex] !== null) {
                     wizSummary[wk.authUserIndex] = String(wiz[wk.authUserIndex]);
                 }
                 if (typeof wiz[wk.buildLabel] === 'string') wizSummary[wk.buildLabel] = wiz[wk.buildLabel];
-                if (wk.isAnonymousSession in wiz) wizSummary[wk.isAnonymousSession] = Boolean(wiz[wk.isAnonymousSession]);
-
-                var auxKeys = wk.signedOutAuxiliaryKeys || [];
-                for (var i = 0; i < auxKeys.length; i++) {
-                    var ak = auxKeys[i];
-                    if (ak in wiz) wizSummary[ak] = Boolean(wiz[ak]);
+                if (typeof wiz[wk.isViewerLoggedIn] === 'boolean') {
+                    wizSummary[wk.isViewerLoggedIn] = wiz[wk.isViewerLoggedIn];
                 }
 
                 var signedOutEl = queryFirst(CFG.selectors.signedOutTrigger);

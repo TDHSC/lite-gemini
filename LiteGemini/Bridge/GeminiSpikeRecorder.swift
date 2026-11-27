@@ -279,7 +279,7 @@ enum GeminiSpikeRecorder {
             GeminiBridgeSelectors.WizGlobalDataKeys.apiHost,
             GeminiBridgeSelectors.WizGlobalDataKeys.authUserIndex,
             GeminiBridgeSelectors.WizGlobalDataKeys.locale,
-            GeminiBridgeSelectors.WizGlobalDataKeys.isAnonymousSession
+            GeminiBridgeSelectors.WizGlobalDataKeys.isViewerLoggedIn
         ]
         let presenceWizKeys = [
             GeminiBridgeSelectors.WizGlobalDataKeys.xsrfToken,
