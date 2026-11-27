@@ -1,0 +1,13 @@
+<html><body><h2>Fixes</h2>
+<ul>
+<li><strong>Google Sign-In routing fix on macOS 27 (<code class="notranslate">Something went wrong</code> / Bluetooth Passkey error)</strong>. Neutralized <code class="notranslate">PublicKeyCredential.getClientCapabilities()</code> and removed unentitled WebAuthn constructors (<code class="notranslate">PublicKeyCredential</code>, <code class="notranslate">AuthenticatorResponse</code>, <code class="notranslate">AuthenticatorAssertionResponse</code>, <code class="notranslate">AuthenticatorAttestationResponse</code>) in unentitled <code class="notranslate">WKWebView</code> builds while keeping <code class="notranslate">CredentialsContainer</code> intact for macOS Keychain Password AutoFill. Entering your email on <code class="notranslate">accounts.google.com</code> now routes directly to the Password / Google Prompt / 2FA screen instead of failing on <code class="notranslate">/v3/signin/challenge/pk</code>.</li>
+<li><strong>Restored ad-hoc TCC compatibility (<code class="notranslate">flags=0x2(adhoc)</code>)</strong>. Removed <code class="notranslate">--options runtime</code> during ad-hoc DMG re-signing while preserving <code class="notranslate">LiteGemini.entitlements</code> so macOS <code class="notranslate">tccd</code> does not restrict <code class="notranslate">SafariPlatformSupport.Helper</code> AutoFill or microphone capture.</li>
+</ul>
+<h2>Notes</h2>
+<ul>
+<li>Because macOS restricts third-party <code class="notranslate">WKWebView</code> Passkey assertions to Apple-entitled web browsers, sign in once using <strong>Keychain Password AutoFill (Touch ID)</strong>, your Google password, or <strong>Try another way → Google Prompt</strong>; your session persists across launches and updates.</li>
+<li>The app is not notarized, so macOS blocks it on first launch. Open <strong>System Settings → Privacy &amp; Security</strong> and click <strong>Open Anyway</strong>, or run:
+<div class="highlight highlight-source-shell"><pre class="notranslate">xattr -dr com.apple.quarantine <span class="pl-s"><span class="pl-pds">"</span>/Applications/Lite Gemini.app<span class="pl-pds">"</span></span></pre></div>
+</li>
+</ul>
+<p><strong>Full Changelog</strong>: <a class="commit-link" href="https://github.com/TDHSC/lite-gemini/compare/v2.1.4...v2.1.5">TDHSC/lite-gemini@<tt>v2.1.4...v2.1.5</tt></a></p></body></html>
